@@ -29,3 +29,6 @@ export const GROK_PROVIDERS: readonly GrokProvider[] = [
   { providerId: "grok-google", idp: "google", label: "Google" },
   { providerId: "grok-x", idp: "twitter", label: "X" },
 ];
+
+/** Shared broker. Google sign-in starts here, not on this app. */
+export const GROK_ISSUER = "https://auth.grok.me";

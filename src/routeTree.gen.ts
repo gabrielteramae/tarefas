@@ -19,7 +19,11 @@ import { Route as OauthRouteImport } from './routes/oauth'
 import { Route as PerfilRouteImport } from './routes/perfil'
 import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as TermosRouteImport } from './routes/termos'
+import { Route as ApiAgendaRouteImport } from './routes/api/agenda'
+import { Route as ApiMfaRouteImport } from './routes/api/mfa'
 import { Route as ApiNotificationsRouteImport } from './routes/api/notifications'
+import { Route as ApiPasswordResetRouteImport } from './routes/api/password-reset'
+import { Route as AuthPopupRouteImport } from './routes/auth/popup'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -72,9 +76,29 @@ const TermosRoute = TermosRouteImport.update({
   path: '/termos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAgendaRoute = ApiAgendaRouteImport.update({
+  id: '/api/agenda',
+  path: '/api/agenda',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMfaRoute = ApiMfaRouteImport.update({
+  id: '/api/mfa',
+  path: '/api/mfa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiNotificationsRoute = ApiNotificationsRouteImport.update({
   id: '/api/notifications',
   path: '/api/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPasswordResetRoute = ApiPasswordResetRouteImport.update({
+  id: '/api/password-reset',
+  path: '/api/password-reset',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthPopupRoute = AuthPopupRouteImport.update({
+  id: '/auth/popup',
+  path: '/auth/popup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -94,7 +118,11 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof PerfilRoute
   '/privacidade': typeof PrivacidadeRoute
   '/termos': typeof TermosRoute
+  '/api/agenda': typeof ApiAgendaRoute
+  '/api/mfa': typeof ApiMfaRoute
   '/api/notifications': typeof ApiNotificationsRoute
+  '/api/password-reset': typeof ApiPasswordResetRoute
+  '/auth/popup': typeof AuthPopupRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -108,7 +136,11 @@ export interface FileRoutesByTo {
   '/perfil': typeof PerfilRoute
   '/privacidade': typeof PrivacidadeRoute
   '/termos': typeof TermosRoute
+  '/api/agenda': typeof ApiAgendaRoute
+  '/api/mfa': typeof ApiMfaRoute
   '/api/notifications': typeof ApiNotificationsRoute
+  '/api/password-reset': typeof ApiPasswordResetRoute
+  '/auth/popup': typeof AuthPopupRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -123,7 +155,11 @@ export interface FileRoutesById {
   '/perfil': typeof PerfilRoute
   '/privacidade': typeof PrivacidadeRoute
   '/termos': typeof TermosRoute
+  '/api/agenda': typeof ApiAgendaRoute
+  '/api/mfa': typeof ApiMfaRoute
   '/api/notifications': typeof ApiNotificationsRoute
+  '/api/password-reset': typeof ApiPasswordResetRoute
+  '/auth/popup': typeof AuthPopupRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -139,7 +175,11 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/privacidade'
     | '/termos'
+    | '/api/agenda'
+    | '/api/mfa'
     | '/api/notifications'
+    | '/api/password-reset'
+    | '/auth/popup'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -153,7 +193,11 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/privacidade'
     | '/termos'
+    | '/api/agenda'
+    | '/api/mfa'
     | '/api/notifications'
+    | '/api/password-reset'
+    | '/auth/popup'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -167,7 +211,11 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/privacidade'
     | '/termos'
+    | '/api/agenda'
+    | '/api/mfa'
     | '/api/notifications'
+    | '/api/password-reset'
+    | '/auth/popup'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -182,7 +230,11 @@ export interface RootRouteChildren {
   PerfilRoute: typeof PerfilRoute
   PrivacidadeRoute: typeof PrivacidadeRoute
   TermosRoute: typeof TermosRoute
+  ApiAgendaRoute: typeof ApiAgendaRoute
+  ApiMfaRoute: typeof ApiMfaRoute
   ApiNotificationsRoute: typeof ApiNotificationsRoute
+  ApiPasswordResetRoute: typeof ApiPasswordResetRoute
+  AuthPopupRoute: typeof AuthPopupRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -258,11 +310,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/agenda': {
+      id: '/api/agenda'
+      path: '/api/agenda'
+      fullPath: '/api/agenda'
+      preLoaderRoute: typeof ApiAgendaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mfa': {
+      id: '/api/mfa'
+      path: '/api/mfa'
+      fullPath: '/api/mfa'
+      preLoaderRoute: typeof ApiMfaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/notifications': {
       id: '/api/notifications'
       path: '/api/notifications'
       fullPath: '/api/notifications'
       preLoaderRoute: typeof ApiNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/password-reset': {
+      id: '/api/password-reset'
+      path: '/api/password-reset'
+      fullPath: '/api/password-reset'
+      preLoaderRoute: typeof ApiPasswordResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/popup': {
+      id: '/auth/popup'
+      path: '/auth/popup'
+      fullPath: '/auth/popup'
+      preLoaderRoute: typeof AuthPopupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -286,7 +366,11 @@ const rootRouteChildren: RootRouteChildren = {
   PerfilRoute: PerfilRoute,
   PrivacidadeRoute: PrivacidadeRoute,
   TermosRoute: TermosRoute,
+  ApiAgendaRoute: ApiAgendaRoute,
+  ApiMfaRoute: ApiMfaRoute,
   ApiNotificationsRoute: ApiNotificationsRoute,
+  ApiPasswordResetRoute: ApiPasswordResetRoute,
+  AuthPopupRoute: AuthPopupRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

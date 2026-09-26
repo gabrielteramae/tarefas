@@ -47,7 +47,7 @@ function OAuth() {
     setBusy(true);
     void signIn(GOOGLE.providerId, { callbackURL: "/oauth" }).catch(() => {
       setBusy(false);
-      setError("O Google não concluiu o login. Tenta de novo.");
+      setError("O Google não entrou. Tente de novo.");
     });
   };
 
@@ -85,8 +85,7 @@ function OAuth() {
       ) : null}
 
       <p className="mt-4 text-xs text-subtle">
-        Se o e-mail do Google for outro, a lista daquela conta é outra. A senha do Google não fica
-        aqui.
+        Outro e-mail do Google é outra lista. A senha do Google não fica aqui.
       </p>
       {error ? <p className="mt-3 text-center text-xs text-danger">{error}</p> : null}
     </AuthScreen>

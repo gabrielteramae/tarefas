@@ -48,6 +48,7 @@ const globalRef = globalThis as typeof globalThis & {
   __pgSqlPromise__?: Promise<Sql>;
   __pgliteInstance__?: Promise<import("@electric-sql/pglite").PGlite>;
   __pgliteMigrateChain__?: Promise<void>;
+  __pgliteDataDir__?: string;
 };
 
 /**
@@ -105,25 +106,47 @@ function createNeonSql(): Promise<Sql> {
   return globalRef.__pgSqlPromise__;
 }
 
+async function openPglite(): Promise<import("@electric-sql/pglite").PGlite> {
+  const { PGlite } = await import("@electric-sql/pglite");
+  const parsers = {
+    [OID_INT8]: Number,
+    [OID_DATE]: identity,
+    [OID_INTERVAL]: identity,
+  };
+  // Disk only in the dev server. The published bundle does not ship PGLite's
+  // data file next to the code, so a file-backed database crashes that process.
+  // Deployed apps use Neon (`DATABASE_URL`) and never reach this function.
+  const dataDir = `${process.cwd()}/.data/pglite`;
+  if (import.meta.env.DEV) {
+    try {
+      const { mkdirSync } = await import("node:fs");
+      mkdirSync(dataDir, { recursive: true });
+      const pg = new PGlite({ dataDir, parsers, relaxedDurability: true });
+      await pg.waitReady;
+      await pg.exec(
+        "create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())",
+      );
+      return pg;
+    } catch (err) {
+      console.error("[db] persistent database unavailable, using memory:", err);
+    }
+  }
+  const pg = new PGlite({ parsers });
+  await pg.waitReady;
+  await pg.exec(
+    "create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())",
+  );
+  return pg;
+}
+
 async function createPgliteSql(): Promise<Sql> {
-  // Embedded Postgres, imported on demand so it never loads on the Neon path.
-  // One in-memory instance per process, shared across HMR module instances, so
-  // data survives source edits (it resets on dev-server restart).
-  globalRef.__pgliteInstance__ ??= (async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    const pg = new PGlite({
-      parsers: {
-        [OID_INT8]: Number,
-        [OID_DATE]: identity,
-        [OID_INTERVAL]: identity,
-      },
-    });
-    await pg.waitReady;
-    await pg.exec(
-      "create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())",
-    );
-    return pg;
-  })().catch((err) => {
+  const dataDir = `${process.cwd()}/.data/pglite`;
+  if (globalRef.__pgliteDataDir__ !== dataDir) {
+    globalRef.__pgliteInstance__ = undefined;
+    globalRef.__pgliteMigrateChain__ = undefined;
+    globalRef.__pgliteDataDir__ = dataDir;
+  }
+  globalRef.__pgliteInstance__ ??= openPglite().catch((err) => {
     globalRef.__pgliteInstance__ = undefined;
     throw err;
   });
@@ -212,7 +235,7 @@ export async function getPglite(): Promise<import("@electric-sql/pglite").PGlite
 /**
  * Finish DB bootstrap before the server handles traffic.
  *
- * - **PGLite** (preview / no `DATABASE_URL`): open the in-memory DB and apply
+ * - **PGLite** (preview / no `DATABASE_URL`): open the database on disk and apply
  *   `migrations/*.sql`. Idempotent — concurrent callers share one promise.
  * - **Neon**: no-op (pool is created lazily on first query).
  *

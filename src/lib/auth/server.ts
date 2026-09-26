@@ -34,6 +34,8 @@ import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { Pool } from "pg";
 import { ensureDbReady, getPglite } from "../db";
 import { emailAndPasswordEnabled } from "./email-password";
@@ -51,17 +53,34 @@ import {
 void ensureDbReady();
 
 /**
- * Preview secret must outlive module reloads: PGLite (and its session rows) is
- * stored on `globalThis`, so an HMR re-eval of this file must NOT mint a new
- * signing secret or every existing session becomes invalid mid-dev. Process
- * restart clears both the secret and PGLite together.
+ * Preview secret must outlive restarts. The accounts live in the file-backed
+ * database; a new random secret on every boot would drop the saved session
+ * even though the password is still right.
  */
 const globalAuthRef = globalThis as typeof globalThis & {
   __grokAuthPreviewSecret__?: string;
 };
 function previewAuthSecret(): string {
-  globalAuthRef.__grokAuthPreviewSecret__ ??= randomBytes(32).toString("hex");
-  return globalAuthRef.__grokAuthPreviewSecret__;
+  if (globalAuthRef.__grokAuthPreviewSecret__) return globalAuthRef.__grokAuthPreviewSecret__;
+  const file = path.join(process.cwd(), ".data", "auth-secret");
+  try {
+    const saved = readFileSync(file, "utf8").trim();
+    if (/^[a-f0-9]{64}$/i.test(saved)) {
+      globalAuthRef.__grokAuthPreviewSecret__ = saved;
+      return saved;
+    }
+  } catch {
+    /* first boot, or a read-only disk */
+  }
+  const secret = randomBytes(32).toString("hex");
+  try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, secret, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    /* this process can still sign sessions */
+  }
+  globalAuthRef.__grokAuthPreviewSecret__ = secret;
+  return secret;
 }
 
 /** Read an env var, treating empty/whitespace as unset. */
@@ -95,13 +114,16 @@ const explicitBaseURL = env("BETTER_AUTH_URL");
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
-// Local `npm run dev` (port 8080 contract). Browsers may send Origin as any of
-// these for the same server — trusting only `localhost` rejects `127.0.0.1` and
-// breaks email/password with "Invalid origin".
+// Local `npm run dev` (port 8080) and the built preview (port 8081). Browsers
+// may send Origin as any of these for the same server — trusting only
+// `localhost` rejects `127.0.0.1` and breaks email/password with "Invalid origin".
 const LOCAL_DEV_ORIGINS: string[] = [
   "http://localhost:8080",
   "http://127.0.0.1:8080",
   "http://[::1]:8080",
+  "http://localhost:8081",
+  "http://127.0.0.1:8081",
+  "http://[::1]:8081",
 ];
 const baseURL = explicitBaseURL ?? {
   // Include loopback hosts so dynamic baseURL resolves for local email/password

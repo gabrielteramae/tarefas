@@ -1,5 +1,6 @@
 {
   "title": "Tarefas",
+  "description": "Lista pessoal. O que fazer hoje, a agenda e o que já foi feito.",
   "type": "website",
   "card": "custom",
   "color": "4dba62"

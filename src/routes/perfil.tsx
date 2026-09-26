@@ -30,7 +30,7 @@ function Perfil() {
       setName(next.displayName);
       setSaved("Nome atualizado.");
     } catch {
-      setSaved("Não foi possível salvar.");
+      setSaved("Não salvou. Tente de novo.");
     } finally {
       setBusy(false);
     }

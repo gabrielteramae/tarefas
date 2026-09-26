@@ -41,6 +41,7 @@ try {
   await page.getByRole("button", { name: "Adicionar tarefa" }).click();
   const card = page.locator("[data-task-id]").first();
   await card.waitFor();
+  await card.getByRole("button", { name: "Editar período de estudar prova" }).click();
   const start = card.locator('input[type="date"]').first();
   const end = card.locator('input[type="date"]').nth(1);
   await start.fill("2026-10-02");

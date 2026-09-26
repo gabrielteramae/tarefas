@@ -9,6 +9,7 @@ import {
   collectRoutePathsFromTree,
   installPreviewHostBridge,
 } from "@/lib/preview-host-bridge";
+import { trappedOAuthTarget } from "@/lib/auth/trapped-oauth";
 
 export function PreviewHostBridge() {
   const router = useRouter();
@@ -16,6 +17,11 @@ export function PreviewHostBridge() {
   useEffect(() => {
     return installPreviewHostBridge({
       navigate: (path) => {
+        const target = trappedOAuthTarget(new URL(path, window.location.origin).href);
+        if (target) {
+          window.location.replace(target);
+          return;
+        }
         router.history.push(path);
       },
       getRoutePaths: () => collectRoutePathsFromTree(router.routeTree),

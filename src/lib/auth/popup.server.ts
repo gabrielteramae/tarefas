@@ -35,7 +35,7 @@ export async function handleAuthPopupRequest(request: Request): Promise<Response
 
   if (done) {
     const errored = url.searchParams.has("error");
-    const token = errored ? null : readCookie(request, SESSION_TOKEN_COOKIE);
+    const token = errored ? null : url.searchParams.get("token") || readCookie(request, SESSION_TOKEN_COOKIE);
     const message: PopupMessage = {
       source: "grok-auth-popup",
       token,
@@ -147,6 +147,12 @@ function completionHtml(message: PopupMessage): string {
   var el = document.getElementById("grok-auth-popup-msg");
   var msg = { source: "grok-auth-popup", token: null };
   try { if (el && el.textContent) msg = JSON.parse(el.textContent); } catch (e) {}
+  try {
+    var params = new URLSearchParams(location.search);
+    if (!msg.token && params.get("token")) msg.token = params.get("token");
+    params.delete("token");
+    history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params.toString() : ""));
+  } catch (e) {}
   try {
     if (msg.token) localStorage.setItem("grok-auth.bearer-token", msg.token);
   } catch (e) {}

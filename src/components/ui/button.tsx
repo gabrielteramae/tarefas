@@ -12,10 +12,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         type={type}
         className={cn(
-          "inline-flex h-12 min-w-12 items-center justify-center rounded-lg px-4 text-sm font-medium transition-transform duration-150 ease-out select-none",
+          "inline-flex h-12 min-w-12 items-center justify-center rounded-lg px-4 text-sm font-medium transition-transform duration-75 ease-out select-none tap-target",
           "focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:outline-none",
           "disabled:pointer-events-none disabled:opacity-40",
-          "active:scale-[0.98]",
           variant === "primary" && "bg-accent text-accent-fg hover:brightness-110",
           variant === "ghost" && "text-muted hover:bg-surface-2 hover:text-fg",
           variant === "danger" && "text-danger hover:bg-surface-2",

@@ -2,8 +2,10 @@ import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { GROK_PROVIDERS, authClient, authEnabled, getBearerToken, keepSignedIn, signIn } from "@/lib/auth/client";
+import { peekOAuthAttempt, pullOAuthAttempt } from "@/lib/auth/oauth-attempt";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
+import { ResetPassword } from "@/components/reset-password";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -13,8 +15,8 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({ component: Login });
 
-const GENERIC_AUTH_ERROR = "Não foi possível entrar. Confira os dados e tente de novo.";
-const PASSWORD_RULE = "A senha precisa de 8 caracteres, com maiúscula, minúscula, número e um símbolo.";
+const GENERIC_AUTH_ERROR = "E-mail ou senha incorretos.";
+const PASSWORD_RULE = "Mínimo 8 caracteres, com maiúscula, minúscula, número e símbolo.";
 const GOOGLE = GROK_PROVIDERS.find((p) => p.idp === "google");
 
 function GoogleMark() {
@@ -28,6 +30,20 @@ function GoogleMark() {
   );
 }
 
+function authFailure(error: { message?: string; status?: number; code?: string } | null | undefined) {
+  const code = error?.code ?? "";
+  const message = error?.message ?? "";
+  if (code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" || /already exists/i.test(message)) {
+    return "Essa conta já existe. Entre.";
+  }
+  if (code === "INVALID_EMAIL_OR_PASSWORD" || /invalid email or password/i.test(message)) {
+    return "E-mail ou senha não conferem.";
+  }
+  if (error?.status === 429 || /muitas tentativas/i.test(message)) return "Muitas tentativas. Espere um pouco.";
+  if (/senha fraca/i.test(message)) return PASSWORD_RULE;
+  return GENERIC_AUTH_ERROR;
+}
+
 function Login() {
   const { user, isPending } = useCurrentUserState();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -35,59 +51,90 @@ function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [googleWait, setGoogleWait] = useState(false);
   const [error, setError] = useState("");
-  const [entered, setEntered] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("erro") === "google") {
-      setError("Não foi possível entrar com o Google. Tente de novo.");
+      setError("O Google não entrou. Tente de novo.");
     }
+    setGoogleWait(Boolean(peekOAuthAttempt()));
     let gone = false;
+    let polling = false;
+    let waiting = Boolean(peekOAuthAttempt());
     const resume = () => {
       if (gone || !getBearerToken()) return;
       void authClient.getSession().then(({ data }) => {
         if (!gone && data?.user) window.location.replace("/");
       });
     };
+    const poll = () => {
+      if (gone || polling) return;
+      if (!peekOAuthAttempt()) {
+        if (waiting) {
+          waiting = false;
+          setGoogleWait(false);
+          setError("O Google não entrou. Tente de novo.");
+        }
+        return;
+      }
+      waiting = true;
+      polling = true;
+      void pullOAuthAttempt()
+        .then((result) => {
+          if (gone) return;
+          if (result.status === "ok") {
+            keepSignedIn(result.token);
+            window.location.replace("/");
+            return;
+          }
+          if (result.status === "error" || !peekOAuthAttempt()) {
+            waiting = false;
+            setGoogleWait(false);
+            setError("O Google não entrou. Tente de novo.");
+          }
+        })
+        .finally(() => {
+          polling = false;
+        });
+    };
+    const timer = window.setInterval(poll, 250);
     const onVisible = () => {
-      if (document.visibilityState === "visible") resume();
+      resume();
+      poll();
     };
     resume();
-    window.addEventListener("pageshow", resume);
+    poll();
+    window.addEventListener("pageshow", onVisible);
+    window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       gone = true;
-      window.removeEventListener("pageshow", resume);
+      window.clearInterval(timer);
+      window.removeEventListener("pageshow", onVisible);
+      window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
-  useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const timer = window.setTimeout(() => setEntered(true), reduce ? 0 : 1400);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  if (!entered || isPending) {
+  if (isPending) {
     return (
-      <main className="load-screen" aria-label="Abrindo o app">
-        <div className="load-mark" aria-hidden="true">
-          <svg viewBox="0 0 64 64" className="size-8">
-            <path d="M16 33.5 27 44.5 48 22" fill="none" stroke="currentColor" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-        <p className="load-name">Tarefas</p>
-      </main>
+      <main className="min-h-dvh bg-bg" aria-label="Abrindo o app" />
     );
   }
 
   if (user) return <Navigate to="/" />;
 
+  if (resetting) {
+    return <ResetPassword initialEmail={email} onBack={() => setResetting(false)} />;
+  }
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!authEnabled || busy) return;
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g, "");
     if (!validEmail(cleanEmail) || password.length < 8 || password.length > 128) {
       setError(GENERIC_AUTH_ERROR);
       return;
@@ -98,6 +145,7 @@ function Login() {
     }
     setBusy(true);
     setError("");
+    keepSignedIn(null);
     const fetchOptions = {
       onSuccess(ctx: { response: Response }) {
         const token = ctx.response.headers.get("set-auth-token");
@@ -106,26 +154,35 @@ function Login() {
     };
     try {
       if (mode === "signup") {
-        const { error: signUpError } = await authClient.signUp.email({
+        const { data, error: signUpError } = await authClient.signUp.email({
           email: cleanEmail,
           password,
           name: cleanEmail.split("@")[0] || "Você",
           fetchOptions,
         });
-        if (signUpError) throw new Error("auth");
+        if (signUpError) throw signUpError;
+        if (data?.token) keepSignedIn(data.token);
+        if (!getBearerToken()) throw new Error("auth");
       } else {
-        const { error: signInError } = await authClient.signIn.email({
+        const { data, error: signInError } = await authClient.signIn.email({
           email: cleanEmail,
           password,
           rememberMe: true,
           fetchOptions,
         });
-        if (signInError) throw new Error("auth");
+        if (signInError) throw signInError;
+        if (data?.token) keepSignedIn(data.token);
+        if (!getBearerToken()) throw new Error("auth");
       }
       window.location.href = "/";
-    } catch {
-      setError(GENERIC_AUTH_ERROR);
-      toast.error(GENERIC_AUTH_ERROR);
+    } catch (err) {
+      const failure = err && typeof err === "object" ? (err as { message?: string; status?: number; code?: string }) : null;
+      const text = authFailure(failure);
+      if (failure?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL" || /already exists/i.test(failure?.message ?? "")) {
+        setMode("signin");
+      }
+      setError(text);
+      toast.error(text);
       setBusy(false);
     }
   };
@@ -185,6 +242,11 @@ function Login() {
                   </button>
                 </div>
               </div>
+              {mode === "signin" ? (
+                <button type="button" className="self-end text-xs font-medium text-accent" onClick={() => setResetting(true)}>
+                  Esqueci a senha
+                </button>
+              ) : null}
               {error ? <p className="text-xs text-danger">{error}</p> : null}
               <Button type="submit" disabled={busy} className="login-field login-submit mt-1 h-12 w-full" style={{ animationDelay: "300ms" }}>
                 {busy ? "Aguarde…" : mode === "signin" ? "Entrar" : "Criar conta"}
@@ -200,19 +262,22 @@ function Login() {
                 </div>
                 <button
                   type="button"
+                  disabled={googleWait}
                   onClick={() => {
                     setError("");
+                    setGoogleWait(true);
                     void signIn(GOOGLE.providerId, { callbackURL: "/" }).catch(() => {
-                      setError("Não foi possível entrar com o Google. Tente de novo.");
+                      setGoogleWait(false);
+                      setError("O Google não entrou. Tente de novo.");
                     });
                   }}
                   className={cn(
-                    "inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface text-sm text-fg",
-                    "transition-transform duration-150 ease-out hover:bg-surface-2 active:scale-[0.96]",
+                    "inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface text-sm text-fg tap-target",
+                    "disabled:opacity-70",
                   )}
                 >
                   <GoogleMark />
-                  Google
+                  {googleWait ? "Conectando…" : "Google"}
                 </button>
               </>
             ) : null}

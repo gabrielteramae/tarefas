@@ -6,27 +6,35 @@ export const Route = createFileRoute("/ajuda")({ component: Ajuda });
 const FAQS = [
   {
     title: "Como adiciono uma tarefa?",
-    hint: "Escreve no campo e toca no +.",
+    hint: "Escreva e toque no +.",
   },
   {
     title: "Como marco como feita?",
-    hint: "Toca no quadradinho à esquerda. Toca de novo se quiser desfazer.",
+    hint: "Toque no quadrado. Toque de novo para desfazer.",
   },
   {
     title: "Como reordeno?",
-    hint: "Na lista, segura o ícone de linhas e arrasta a tarefa. O dia se escolhe em cada tarefa. O calendário só mostra.",
+    hint: "Toque as linhas à esquerda e arraste.",
   },
   {
-    title: "Os emojis?",
-    hint: "O app lê o texto (café, treino, estudo…) e coloca um ícone ao lado.",
+    title: "Como marco o dia?",
+    hint: "Toque o calendário da tarefa e escolha De e Até.",
   },
   {
-    title: "Minhas tarefas aparecem para outra pessoa?",
-    hint: "Não. Cada conta vê só a própria lista.",
+    title: "Como acho uma tarefa?",
+    hint: "Use a busca, embaixo do campo.",
+  },
+  {
+    title: "Onde ficam as feitas?",
+    hint: "Na aba Feitas, embaixo.",
+  },
+  {
+    title: "Outra pessoa vê minha lista?",
+    hint: "Não. Cada conta vê só a própria.",
   },
   {
     title: "Como saio?",
-    hint: "Engrenagem no canto → Sair. No Grok, a sessão pode voltar sozinha.",
+    hint: "Engrenagem → Sair.",
   },
 ];
 

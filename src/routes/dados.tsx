@@ -29,7 +29,7 @@ function Dados() {
     try {
       setSnap(await readPersistence());
     } catch {
-      setError("Não consegui ler o banco agora.");
+      setError("Não carregou. Tente de novo.");
     } finally {
       setBusy(false);
     }
@@ -39,16 +39,15 @@ function Dados() {
     void load();
   }, []);
 
-  const engine =
-    snap?.engine === "postgres" ? "Postgres" : snap ? "PGLite, nesta máquina" : "…";
+  const engine = snap?.engine === "postgres" ? "Na sua conta" : snap ? "Neste aparelho" : "…";
 
   return (
     <AuthScreen title="Dados salvos">
       <SettingGroup>
-        <SettingRow title="Onde está salvo">
+        <SettingRow title="Onde fica">
           <span className="text-xs text-muted">{engine}</span>
         </SettingRow>
-        <SettingRow title="Tarefas gravadas">
+        <SettingRow title="Tarefas">
           <span className="text-xs text-fg">{snap ? snap.tasks : "…"}</span>
         </SettingRow>
         <SettingRow title="Concluídas">
@@ -57,24 +56,24 @@ function Dados() {
         <SettingRow title="Com dia marcado">
           <span className="text-xs text-fg">{snap ? snap.scheduled : "…"}</span>
         </SettingRow>
-        <SettingRow title="Última gravação">
+        <SettingRow title="Última mudança">
           <span className="text-xs text-muted">{formatWhen(snap?.newestAt ?? null)}</span>
         </SettingRow>
       </SettingGroup>
 
-      <h2 className="mt-8 mb-3 text-sm font-medium text-muted">Linhas da sua conta</h2>
+      <h2 className="mt-8 mb-3 text-sm font-medium text-muted">Suas tarefas</h2>
       <ul className="flex flex-col gap-2">
         {snap && snap.rows.length === 0 ? (
           <li className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-muted">
-            Ainda não há linhas. Cria uma tarefa e volta aqui.
+            Nenhuma tarefa ainda.
           </li>
         ) : (
           snap?.rows.map((row) => (
             <li key={row.id} className="rounded-xl border border-border bg-surface px-4 py-3">
               <p className="text-sm text-fg">{row.text}</p>
               <p className="mt-1 text-xs text-subtle">
-                {row.done ? "feita" : "pendente"}
-                {row.dueAt ? ` · dia ${formatWhen(row.dueAt)}` : ""} · {formatWhen(row.createdAt)}
+                {row.done ? "Feita" : "Para fazer"}
+                {row.dueAt ? ` · ${formatWhen(row.dueAt)}` : ""} · {formatWhen(row.createdAt)}
               </p>
             </li>
           ))
@@ -82,7 +81,7 @@ function Dados() {
       </ul>
 
       <Button className="mt-6 w-full" disabled={busy} onClick={() => void load()}>
-        {busy ? "Lendo…" : "Ler de novo do banco"}
+        {busy ? "Atualizando…" : "Atualizar"}
       </Button>
       {error ? <p className="mt-3 text-center text-xs text-danger">{error}</p> : null}
     </AuthScreen>

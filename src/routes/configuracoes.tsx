@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AuthScreen, SettingGroup, SettingRow } from "@/components/auth-screen";
+import { MfaSetting } from "@/components/mfa-setting";
 import { Switch } from "@/components/ui/switch";
 import { getPrefs, updatePrefs, type UserPrefs } from "@/lib/prefs";
 import { applyTheme, type ThemeMode } from "@/lib/theme";
@@ -76,6 +77,9 @@ function Configuracoes() {
           />
         </SettingRow>
       </SettingGroup>
+      <div className="mt-6">
+        <MfaSetting />
+      </div>
     </AuthScreen>
   );
 }

@@ -39,22 +39,16 @@ function Privacidade() {
       a.download = "tarefas.json";
       a.click();
       URL.revokeObjectURL(url);
-      setStatus("Arquivo baixado neste aparelho.");
+      setStatus("Arquivo baixado.");
     } catch {
-      setStatus("Não foi possível exportar.");
+      setStatus("Não exportou. Tente de novo.");
     } finally {
       setBusy(false);
     }
   };
 
   const eraseAccount = async () => {
-    if (
-      !window.confirm(
-        "Excluir a conta e os dados vinculados? Serão apagados e-mail, nome, senha, tarefas, preferências, avisos e sessão. Esta operação é irreversível.",
-      )
-    ) {
-      return;
-    }
+    if (!window.confirm("Excluir a conta, a senha e as tarefas? Não dá para desfazer.")) return;
     setBusy(true);
     setStatus("");
     try {
@@ -65,20 +59,20 @@ function Privacidade() {
         window.location.href = "/login";
       }
     } catch {
-      setStatus("Não foi possível excluir a conta.");
+      setStatus("Não excluiu. Tente de novo.");
       setBusy(false);
     }
   };
 
   const wipe = async () => {
-    if (!window.confirm("Excluir todas as tarefas desta conta? A operação não remove o e-mail nem a senha.")) return;
+    if (!window.confirm("Apagar todas as tarefas? A conta continua.")) return;
     setBusy(true);
     setStatus("");
     try {
       await deleteAllTasks();
-      setStatus("Lista apagada. Só a sua conta foi afetada.");
+      setStatus("Lista apagada.");
     } catch {
-      setStatus("Não foi possível apagar.");
+      setStatus("Não apagou. Tente de novo.");
     } finally {
       setBusy(false);
     }
@@ -87,14 +81,13 @@ function Privacidade() {
   return (
     <AuthScreen title="Privacidade">
       <p className="mb-4 text-sm text-muted">
-        Os registros da lista são vinculados exclusivamente à conta autenticada. Terceiros não leem, alteram nem
-        enumeram o conteúdo.
+        Só a sua conta vê esta lista.
       </p>
       <SettingGroup>
-        <SettingRow title="Dados tratados" hint="Correio eletrônico, nome e tarefas. A senha permanece apenas como hash." />
-        <SettingRow title="Acesso" hint="Cada requisição é autorizada pela sessão. O cliente não envia identificador arbitrário." />
-        <SettingRow title="Finalidade" hint="Não há venda de dados nem rastreamento publicitário." />
-        <SettingRow title="Dados móveis" hint="O tráfego limita-se a autenticação, gravação da lista e aviso, se habilitado." />
+        <SettingRow title="Dados tratados" hint="E-mail, nome e tarefas. A senha fica só como hash." />
+        <SettingRow title="Acesso" hint="Só a sessão autoriza." />
+        <SettingRow title="Finalidade" hint="Sem venda de dados e sem anúncio." />
+        <SettingRow title="Dados móveis" hint="Só login, lista e aviso, se estiver ligado." />
         <SettingRow title="Cookies neste aparelho" hint={consentLabel(consent)} />
       </SettingGroup>
 
@@ -103,14 +96,14 @@ function Privacidade() {
         <li className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 text-sm">
           <span>
             <span className="block text-fg">Sessão da conta</span>
-            <span className="mt-0.5 block text-xs text-subtle">Oculto, dura 7 dias e mantém você logado. Não entra em anúncio.</span>
+            <span className="mt-0.5 block text-xs text-subtle">Mantém o login por 7 dias. Não é anúncio.</span>
           </span>
           <span className="shrink-0 text-xs text-subtle">{user ? "Ativa" : "Sem sessão"}</span>
         </li>
         <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
           <span>
             <span className="block text-fg">Cópia neste aparelho</span>
-            <span className="mt-0.5 block text-xs text-subtle">Fica salva para você voltar logado. Só some ao encerrar a sessão.</span>
+            <span className="mt-0.5 block text-xs text-subtle">Guarda o login neste aparelho.</span>
           </span>
           <span className="shrink-0 text-xs text-subtle">{user ? "Guardada" : "Não"}</span>
         </li>
@@ -136,7 +129,7 @@ function Privacidade() {
         <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
           <span>
             <span className="block text-fg">Google, no login</span>
-            <span className="mt-0.5 block text-xs text-subtle">Os cookies ficam no site do Google. Este app não lê nem apaga.</span>
+            <span className="mt-0.5 block text-xs text-subtle">Ficam no Google. Este app não lê.</span>
           </span>
           <span className="shrink-0 text-xs text-subtle">Fora daqui</span>
         </li>
@@ -158,7 +151,7 @@ function Privacidade() {
       <ul className="overflow-hidden rounded-xl border border-border bg-surface">
         {cookies.length === 0 ? (
           <li className="px-4 py-3 text-xs text-subtle">
-            Nenhum cookie visível para o JavaScript. O de sessão fica oculto de propósito.
+            Nenhum cookie extra. O de sessão fica oculto.
           </li>
         ) : (
           cookies.map((cookie) => (
@@ -205,7 +198,7 @@ function Privacidade() {
         </Button>
       </div>
 
-      <p className="mt-6 mb-2 text-sm text-fg">LocalStorage</p>
+      <p className="mt-6 mb-2 text-sm text-fg">Neste aparelho</p>
       <ul className="overflow-hidden rounded-xl border border-border bg-surface">
         {stored.length === 0 ? (
           <li className="px-4 py-3 text-xs text-subtle">Nada guardado neste aparelho.</li>

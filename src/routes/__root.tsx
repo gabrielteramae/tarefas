@@ -7,11 +7,16 @@ import { Toaster } from "@/components/ui/toaster";
 import { readSavedConsent } from "@/lib/consent";
 import { getPrefs } from "@/lib/prefs";
 import { applyTheme, readStoredTheme } from "@/lib/theme";
+import { keepSignedIn } from "@/lib/auth/client";
+import { peekOAuthAttempt, pullOAuthAttempt } from "@/lib/auth/oauth-attempt";
+import { NotFound } from "@/components/not-found";
+import { OpenSplash } from "@/components/app-mark";
+import { APP_DESCRIPTION, APP_NAME } from "@/lib/brand";
+
 import appCss from "../styles.css?url";
 
-const APP_NAME = "Tarefas";
-
 export const Route = createRootRoute({
+  notFoundComponent: NotFound,
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -24,7 +29,7 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#09090b" },
       {
         name: "description",
-        content: "Lista de tarefas simples para o celular.",
+        content: APP_DESCRIPTION,
       },
     ],
     links: [
@@ -91,6 +96,54 @@ function ThemeSync() {
   return null;
 }
 
+function OAuthResume() {
+  useEffect(() => {
+    let gone = false;
+    let polling = false;
+    const takeToken = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get("token");
+        if (!token) return false;
+        keepSignedIn(token);
+        params.delete("token");
+        const q = params.toString();
+        window.history.replaceState(null, "", window.location.pathname + (q ? `?${q}` : "") + window.location.hash);
+        window.location.replace("/");
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const poll = () => {
+      if (gone || polling || takeToken() || !peekOAuthAttempt()) return;
+      polling = true;
+      void pullOAuthAttempt()
+        .then((result) => {
+          if (gone || result.status !== "ok") return;
+          keepSignedIn(result.token);
+          window.location.replace("/");
+        })
+        .finally(() => {
+          polling = false;
+        });
+    };
+    const timer = window.setInterval(poll, 250);
+    poll();
+    window.addEventListener("pageshow", poll);
+    window.addEventListener("focus", poll);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      gone = true;
+      window.clearInterval(timer);
+      window.removeEventListener("pageshow", poll);
+      window.removeEventListener("focus", poll);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, []);
+  return null;
+}
+
 function Root() {
   return (
     <html lang="pt-BR" data-theme="dark" suppressHydrationWarning>
@@ -98,7 +151,7 @@ function Root() {
         <script
           dangerouslySetInnerHTML={{
             __html:
-              '(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("dino-theme")==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})()',
+              '(function(){document.documentElement.dataset.splash="on"})();(function(){var broker="https://auth.grok.me";function target(href){try{var url=new URL(href,location.origin);if(url.origin!==location.origin)return null;var path=url.pathname.replace(/\\/+$/,"")||"/";if(path==="/sign-in"||path==="/api/auth/oauth2/authorize")return broker+path+url.search;if(path==="/auth/popup")return url.href;return null}catch(e){return null}}function leave(href){var next=target(href);if(!next)return false;if(next===location.href){try{if(sessionStorage.getItem("grok-auth.popup-reload")===next)return false;sessionStorage.setItem("grok-auth.popup-reload",next)}catch(e){}location.replace(next);return true}location.replace(next);return true}if(leave(location.href))return;var push=history.pushState,replace=history.replaceState;history.pushState=function(s,t,url){if(url&&leave(String(url)))return;return push.apply(this,arguments)};history.replaceState=function(s,t,url){if(url&&leave(String(url)))return;return replace.apply(this,arguments)};window.addEventListener("popstate",function(){leave(location.href)})})();(function(){try{var p=new URLSearchParams(location.search);var t=p.get("token");if(t){try{localStorage.setItem("grok-auth.bearer-token",t)}catch(e){}p.delete("token");var q=p.toString();history.replaceState(null,"",location.pathname+(q?"?"+q:"")+location.hash)}var a=p.get("attempt");if(a&&/^[0-9a-f]{32}$/.test(a)){try{localStorage.setItem("grok-auth.oauth-attempt",a)}catch(e){}fetch("/api/auth/oauth-claim?attempt="+encodeURIComponent(a),{method:"POST",credentials:"same-origin",cache:"no-store",keepalive:true})}}catch(e){}})();(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("dino-theme")==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})()',
           }}
         />
         <HeadContent />
@@ -106,11 +159,15 @@ function Root() {
       <body>
         <ThemeSync />
         <ViewportFrame />
+        <OAuthResume />
         <ThirdPartyFonts />
         <PreviewHostBridge />
         <AuthProvider>
-          <Outlet />
+          <div className="app-enter">
+            <Outlet />
+          </div>
         </AuthProvider>
+        <OpenSplash />
         <CookieConsent />
         <Toaster />
         <Scripts />

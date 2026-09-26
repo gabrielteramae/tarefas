@@ -15,6 +15,13 @@ export function validEmail(email: string) {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+export function attemptCount(key: string, windowMs: number) {
+  const now = Date.now();
+  const hits = (attempts.get(key) ?? []).filter((at) => now - at < windowMs);
+  attempts.set(key, hits);
+  return hits.length;
+}
+
 export function tooManyAttempts(key: string, max: number, windowMs: number) {
   const now = Date.now();
   const hits = (attempts.get(key) ?? []).filter((at) => now - at < windowMs);

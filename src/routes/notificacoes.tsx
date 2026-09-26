@@ -36,21 +36,21 @@ function Notificacoes() {
   return (
     <AuthScreen title="Notificações">
       <SettingGroup>
-        <SettingRow title="Hoje">
+        <SettingRow title="Hoje" hint="Avisa o que vence hoje.">
           <Switch
             label="Hoje"
             checked={prefs?.notifyToday ?? false}
             onCheckedChange={(value) => void patch({ notifyToday: value })}
           />
         </SettingRow>
-        <SettingRow title="Atrasadas">
+        <SettingRow title="Atrasadas" hint="Avisa o que passou do dia.">
           <Switch
             label="Atrasadas"
             checked={prefs?.notifyLate ?? false}
             onCheckedChange={(value) => void patch({ notifyLate: value })}
           />
         </SettingRow>
-        <SettingRow title="Ao concluir">
+        <SettingRow title="Ao concluir" hint="Avisa quando você marca como feita.">
           <Switch
             label="Ao concluir"
             checked={prefs?.notifyDone ?? false}

@@ -1,6 +1,8 @@
 import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { runPreSignInSignOut, runSignOut } from "../../../scripts/sign-out-plan.mjs";
+import { beginOAuthAttempt, callbackWithAttempt, clearOAuthAttempt } from "./oauth-attempt";
+import { OAUTH_ESCAPE_KEY } from "./trapped-oauth";
 import { GROK_PROVIDERS } from "./providers";
 
 /**
@@ -72,9 +74,9 @@ function setBearerToken(token: string | null): void {
   }
 }
 
-/** Keep this browser signed in after the app is closed. */
+/** Keep this browser signed in after the app is closed. `null` forgets the session. */
 export function keepSignedIn(token: string | null) {
-  if (token) setBearerToken(token);
+  setBearerToken(token && token.length > 0 ? token : null);
 }
 
 /**
@@ -87,6 +89,36 @@ function inLivePreview(): boolean {
     typeof window !== "undefined" &&
     window.location.hostname.endsWith(".grok-sandbox.com")
   );
+}
+
+function isPhone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return true;
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
+/** Popup only inside a desktop preview iframe. A phone popup loses the session on the way back from Google. */
+function needsAuthPopup(): boolean {
+  if (isPhone() || !inLivePreview()) return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
+function assignAuthUrl(url: string) {
+  if (isPhone()) {
+    try {
+      if (window.top && window.top !== window.self) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch {
+      /* the frame cannot leave; fall through to this window */
+    }
+  }
+  window.location.href = url;
 }
 
 /** Message the popup posts back to the opener once sign-in completes. */
@@ -111,12 +143,22 @@ export async function signIn(
   opts: { callbackURL?: string; errorCallbackURL?: string } = {},
 ): Promise<void> {
   const callbackURL = opts.callbackURL ?? "/";
-  const errorCallbackURL = opts.errorCallbackURL ?? "/";
+  const errorCallbackURL = opts.errorCallbackURL ?? "/login?erro=google";
 
   // Open the popup SYNCHRONOUSLY on the user gesture — before any await
   // (including signOut). Awaiting first drops user-gesture privilege in some
   // browsers when the opener is a cross-origin live-preview iframe.
-  const popup = inLivePreview() ? openSignInPopup(providerId) : null;
+  const usePopup = needsAuthPopup();
+  const popup = usePopup ? openSignInPopup(providerId) : null;
+  try {
+    sessionStorage.removeItem(OAUTH_ESCAPE_KEY);
+  } catch {
+    /* storage blocked */
+  }
+  // Phones open Google in another browser. Remember the attempt BEFORE any
+  // await so a storage-blocked webview still has the id when it comes back.
+  // Desktop popups must not take this path.
+  const attempt = usePopup ? null : beginOAuthAttempt();
 
   // Clear any prior session so switching providers actually switches identity.
   // Bounded because the popup is already open — a request that never settles
@@ -130,7 +172,7 @@ export async function signIn(
     clearToken: () => setBearerToken(null),
   });
 
-  if (inLivePreview()) {
+  if (needsAuthPopup()) {
     if (!popup) throw new Error("Pop-up blocked — allow pop-ups for sign-in");
     const token = await waitForPopupToken(popup);
     if (!token) throw new Error("Sign-in was cancelled or failed");
@@ -153,13 +195,29 @@ export async function signIn(
     return;
   }
 
-  const { data, error } = await authClient.signIn.oauth2({
-    providerId,
-    callbackURL,
-    errorCallbackURL,
-  });
-  if (error) throw new Error(error.message ?? "Sign-in failed");
-  if (data?.url) window.location.href = data.url;
+  // The cookie from the phone's other browser never reaches this screen, so
+  // the callback stores the session under this attempt and the login page
+  // claims it when that browser closes.
+  const doneURL = attempt ? callbackWithAttempt(callbackURL, attempt) : callbackURL;
+  const failURL = attempt ? callbackWithAttempt(errorCallbackURL, attempt) : errorCallbackURL;
+
+  let leaving = false;
+  try {
+    const { data, error } = await authClient.signIn.oauth2({
+      providerId,
+      callbackURL: doneURL,
+      errorCallbackURL: failURL,
+    });
+    if (error || !data?.url) {
+      clearOAuthAttempt();
+      throw new Error(error?.message ?? "Sign-in failed");
+    }
+    leaving = true;
+    assignAuthUrl(data.url);
+  } catch (err) {
+    if (!leaving) clearOAuthAttempt();
+    throw err;
+  }
 }
 
 /**
@@ -206,10 +264,15 @@ function waitForPopupToken(popup: Window): Promise<string | null> {
     // signing in, and drop window.opener on the way back. Only treat a close as
     // cancel after the window was actually open, and accept a token saved by the
     // return page even if the message never arrives.
+    const started = Date.now();
     const pollTimer = window.setInterval(() => {
       const saved = getBearerToken();
       if (saved) {
         settle(saved);
+        return;
+      }
+      if (Date.now() - started > 180_000) {
+        settle(null);
         return;
       }
       let closed = false;
@@ -218,17 +281,25 @@ function waitForPopupToken(popup: Window): Promise<string | null> {
       } catch {
         closed = false;
       }
-      if (!closed) sawOpen = true;
-      if (!sawOpen || !closed) return;
-      window.clearInterval(pollTimer);
-      closeTimer = window.setTimeout(() => settle(getBearerToken()), 1500);
+      if (!closed) {
+        sawOpen = true;
+        return;
+      }
+      if (!sawOpen || closeTimer !== undefined) return;
+      closeTimer = window.setTimeout(() => settle(getBearerToken()), 90_000);
     }, 300);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== BEARER_KEY || !event.newValue) return;
+      settle(event.newValue);
+    };
     function cleanup() {
       window.clearInterval(pollTimer);
       if (closeTimer !== undefined) window.clearTimeout(closeTimer);
       window.removeEventListener("message", onMessage);
+      window.removeEventListener("storage", onStorage);
     }
     window.addEventListener("message", onMessage);
+    window.addEventListener("storage", onStorage);
   });
 }
 

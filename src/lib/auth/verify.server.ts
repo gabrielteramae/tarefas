@@ -42,21 +42,9 @@ export class UnauthorizedError extends Error {
   }
 }
 
-export type VerifiedUser = { id: string; email: string | null };
+export type VerifiedUser = { id: string; email: string | null; token: string };
 
-/**
- * Resolve the signed-in user from the current request, or `null` when auth isn't
- * configured / nobody is signed in. Safe to call from server functions and SSR
- * loaders.
- *
- * `bearerToken` is for the LIVE PREVIEW: the app runs in a partitioned iframe
- * whose cookies don't reach the server, so `authMiddleware` forwards the session
- * as a bearer token, which we present as `Authorization: Bearer …` (the `bearer`
- * plugin resolves it). When deployed no token is passed and the cookie is used.
- */
-export async function getSessionUser(
-  bearerToken?: string,
-): Promise<VerifiedUser | null> {
+export async function getAuthContext(bearerToken?: string): Promise<VerifiedUser | null> {
   if (!authConfigured && !gateIdentityEnabled()) return null;
   const request = getRequest();
   if (!request) return null;
@@ -66,8 +54,13 @@ export async function getSessionUser(
     headers.set("Authorization", `Bearer ${bearerToken}`);
   }
   const session = await auth.api.getSession({ headers });
-  if (!session?.user) return null;
-  return { id: session.user.id, email: session.user.email ?? null };
+  if (!session?.user || !session.session?.token) return null;
+  return { id: session.user.id, email: session.user.email ?? null, token: session.session.token };
+}
+
+/** Resolve the signed-in user from the current request, or `null`. */
+export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser | null> {
+  return getAuthContext(bearerToken);
 }
 
 /**
@@ -93,5 +86,7 @@ export async function requireUserId(bearerToken?: string): Promise<string> {
   }
   const user = await getSessionUser(bearerToken);
   if (!user) throw new UnauthorizedError();
+  const { assertMfaSatisfied } = await import("./mfa.server");
+  await assertMfaSatisfied(user.id, user.token);
   return user.id;
 }
