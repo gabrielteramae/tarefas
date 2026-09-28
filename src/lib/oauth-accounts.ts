@@ -14,6 +14,10 @@ function labelFor(providerId: string) {
   return "OAuth";
 }
 
+function isXAccount(providerId: string) {
+  return providerId === "grok-x" || providerId === "twitter" || providerId === "x";
+}
+
 export const listLinkedAccounts = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }): Promise<LinkedAccount[]> => {
@@ -24,7 +28,9 @@ export const listLinkedAccounts = createServerFn({ method: "GET" })
       where "userId" = ${context.userId}
       order by "createdAt" asc
     `;
-    return rows.map((row) => ({
+    return rows
+      .filter((row) => !isXAccount(row.provider_id))
+      .map((row) => ({
       providerId: row.provider_id,
       label: labelFor(row.provider_id),
       createdAt: row.created_at,

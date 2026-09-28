@@ -9,6 +9,7 @@ export function Toaster() {
           toast: "bg-surface text-fg border border-border shadow-none",
           title: "text-sm",
           description: "text-xs text-muted",
+          actionButton: "min-h-11 px-3 text-sm font-medium text-accent",
         },
       }}
     />

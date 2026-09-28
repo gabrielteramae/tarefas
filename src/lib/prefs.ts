@@ -6,8 +6,6 @@ import { isThemeMode, type ThemeMode } from "@/lib/theme";
 
 export type UserPrefs = {
   displayName: string;
-  dinoTalks: boolean;
-  dinoSmall: boolean;
   confirmDelete: boolean;
   notifyToday: boolean;
   notifyLate: boolean;
@@ -17,13 +15,11 @@ export type UserPrefs = {
 
 const DEFAULTS: UserPrefs = {
   displayName: "",
-  dinoTalks: true,
-  dinoSmall: false,
   confirmDelete: false,
   notifyToday: false,
   notifyLate: false,
   notifyDone: false,
-  theme: "dark",
+  theme: "system",
 };
 
 function asBool(v: unknown, fallback: boolean) {
@@ -52,11 +48,9 @@ function rowToPrefs(row: Record<string, unknown> | undefined): UserPrefs {
   if (!row) return { ...DEFAULTS };
   return {
     displayName: typeof row.display_name === "string" ? row.display_name : "",
-    dinoTalks: asBool(row.dino_talks, true),
-    dinoSmall: asBool(row.dino_small, false),
     confirmDelete: asBool(row.confirm_delete, false),
     ...readFilters(row.notify_filters),
-    theme: isThemeMode(row.theme) ? row.theme : "dark",
+        theme: isThemeMode(row.theme) ? row.theme : "system",
   };
 }
 
@@ -72,13 +66,11 @@ function sanitizeName(raw: string) {
 const Patch = z
   .object({
     displayName: z.string().max(80).optional(),
-    dinoTalks: z.boolean().optional(),
-    dinoSmall: z.boolean().optional(),
     confirmDelete: z.boolean().optional(),
     notifyToday: z.boolean().optional(),
     notifyLate: z.boolean().optional(),
     notifyDone: z.boolean().optional(),
-    theme: z.enum(["dark", "light"]).optional(),
+    theme: z.enum(["dark", "light", "system"]).optional(),
   })
   .strict();
 
@@ -87,12 +79,12 @@ export const getPrefs = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<UserPrefs> => {
     const sql = await getSql();
     const rows = await sql<Record<string, unknown>>`
-      select display_name, dino_talks, dino_small, confirm_delete, notify_filters, theme
+      select display_name, confirm_delete, notify_filters, theme
       from user_prefs where user_id = ${context.userId}
     `;
     if (rows[0]) return rowToPrefs(rows[0]);
     await sql`
-      insert into user_prefs (user_id) values (${context.userId})
+            insert into user_prefs (user_id, theme) values (${context.userId}, 'system')
       on conflict (user_id) do nothing
     `;
     return { ...DEFAULTS };
@@ -104,14 +96,12 @@ export const updatePrefs = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<UserPrefs> => {
     const sql = await getSql();
     const currentRows = await sql<Record<string, unknown>>`
-      select display_name, dino_talks, dino_small, confirm_delete, notify_filters, theme
+      select display_name, confirm_delete, notify_filters, theme
       from user_prefs where user_id = ${context.userId}
     `;
     const current = rowToPrefs(currentRows[0]);
     const next: UserPrefs = {
       displayName: data.displayName !== undefined ? sanitizeName(data.displayName) : current.displayName,
-      dinoTalks: data.dinoTalks ?? current.dinoTalks,
-      dinoSmall: data.dinoSmall ?? current.dinoSmall,
       confirmDelete: data.confirmDelete ?? current.confirmDelete,
       notifyToday: data.notifyToday ?? current.notifyToday,
       notifyLate: data.notifyLate ?? current.notifyLate,
@@ -121,16 +111,14 @@ export const updatePrefs = createServerFn({ method: "POST" })
     const filters = writeFilters(next);
     await sql`
       insert into user_prefs (
-        user_id, display_name, dino_talks, dino_small, confirm_delete, notify_filters, theme, updated_at
+        user_id, display_name, confirm_delete, notify_filters, theme, updated_at
       )
       values (
-        ${context.userId}, ${next.displayName}, ${next.dinoTalks}, ${next.dinoSmall},
+        ${context.userId}, ${next.displayName},
         ${next.confirmDelete}, ${filters}, ${next.theme}, now()
       )
       on conflict (user_id) do update set
         display_name = excluded.display_name,
-        dino_talks = excluded.dino_talks,
-        dino_small = excluded.dino_small,
         confirm_delete = excluded.confirm_delete,
         notify_filters = excluded.notify_filters,
         theme = excluded.theme,

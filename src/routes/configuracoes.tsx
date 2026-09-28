@@ -4,7 +4,7 @@ import { AuthScreen, SettingGroup, SettingRow } from "@/components/auth-screen";
 import { MfaSetting } from "@/components/mfa-setting";
 import { Switch } from "@/components/ui/switch";
 import { getPrefs, updatePrefs, type UserPrefs } from "@/lib/prefs";
-import { applyTheme, type ThemeMode } from "@/lib/theme";
+import { applyTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/configuracoes")({ component: Configuracoes });
@@ -33,23 +33,16 @@ function Configuracoes() {
     }
   };
 
-  const theme = prefs?.theme ?? "dark";
+  const theme = prefs?.theme ?? "system";
 
   return (
     <AuthScreen title="Configurações">
       <SettingGroup>
         <SettingRow title="Aparência">
-          <div className="relative grid w-[148px] grid-cols-2 rounded-full border border-border bg-surface-2 p-0.5">
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-accent",
-                "transition-transform duration-300 ease-out motion-reduce:transition-none",
-                theme === "light" && "translate-x-full",
-              )}
-            />
+          <div className="grid grid-cols-3 gap-1 rounded-full bg-surface-2 p-1" role="group" aria-label="Aparência">
             {(
               [
+                ["system", "Auto"],
                 ["dark", "Escuro"],
                 ["light", "Claro"],
               ] as const
@@ -58,10 +51,10 @@ function Configuracoes() {
                 key={value}
                 type="button"
                 aria-pressed={theme === value}
-                onClick={() => void patch({ theme: value satisfies ThemeMode })}
+                onClick={() => void patch({ theme: value })}
                 className={cn(
-                  "relative z-10 h-8 rounded-full text-xs font-medium transition-colors duration-300 ease-out",
-                  theme === value ? "text-accent-fg" : "text-muted",
+                  "min-h-11 rounded-full px-2 text-xs font-medium",
+                  theme === value ? "bg-accent text-accent-fg" : "text-muted",
                 )}
               >
                 {label}

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
+import { plainText } from "@/lib/text";
 
 export type TaskCategory = "trabalho" | "casa" | "estudo";
 export type TaskPriority = "urgente" | "normal" | "depois";
@@ -40,12 +41,7 @@ function rateLimit(userId: string) {
 }
 
 function sanitizeTaskText(raw: string) {
-  const text = raw
-    .replace(/[\u0000-\u001F\u007F]/g, "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, TASK_MAX);
+  const text = plainText(raw, TASK_MAX);
   if (!text) fail();
   return text;
 }
@@ -96,7 +92,7 @@ function asPriority(value: string): TaskPriority {
 function toRow(row: DbTask): TaskRow {
   return {
     id: row.id,
-    text: row.text,
+    text: plainText(row.text, TASK_MAX) || row.text.slice(0, TASK_MAX),
     done: Boolean(row.done),
     category: asCategory(row.category),
     priority: asPriority(row.priority),
@@ -117,10 +113,20 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function yesterdayKey() {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() - 1);
+function shiftDay(day: string, delta: number) {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + delta);
   return date.toISOString().slice(0, 10);
+}
+
+/** Client calendar day, rejected if it is not close to the server clock. */
+function trustedDay(raw: string | undefined) {
+  const utc = todayKey();
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return utc;
+  const picked = Date.parse(`${raw}T12:00:00Z`);
+  if (!Number.isFinite(picked)) return utc;
+  if (Math.abs(picked - Date.now()) > 36 * 60 * 60 * 1000) return utc;
+  return raw;
 }
 
 export const listTasks = createServerFn({ method: "GET" })
@@ -147,6 +153,19 @@ export const addTask = createServerFn({ method: "POST" })
     const dueAt = parseDue(data.dueAt);
     const endsAt = parseDue(data.endsAt);
     const sql = await getSql();
+    const recent = await sql<{ id: string }>`
+      select id from tasks
+      where user_id = ${context.userId} and text = ${text}
+        and created_at > now() - interval '2 seconds'
+      limit 1
+    `;
+    if (recent[0] && recent[0].id !== data.id) {
+      const existing = await sql<DbTask>`
+        select id, text, done, category, priority, due_at::text as due_at, ends_at::text as ends_at, sort_order
+        from tasks where id = ${recent[0].id} and user_id = ${context.userId}
+      `;
+      if (existing[0]) return toRow(existing[0]);
+    }
     const counted = await sql<{ n: number }>`
       select count(*)::int as n from tasks where user_id = ${context.userId}
     `;
@@ -245,7 +264,81 @@ export const exportMyData = createServerFn({ method: "GET" })
       from tasks where user_id = ${context.userId}
       order by sort_order asc, created_at desc
     `;
-    return { exportedAt: new Date().toISOString(), tasks: tasks.map(toRow) };
+    return { version: 1 as const, exportedAt: new Date().toISOString(), tasks: tasks.map(toRow) };
+  });
+
+const ImportTask = z.object({
+  id: z.string().uuid().optional(),
+  text: z.string().max(200),
+  done: z.boolean().optional(),
+  category: z.enum(CATEGORIES).optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  dueAt: z.string().max(40).nullable().optional(),
+  endsAt: z.string().max(40).nullable().optional(),
+  sortOrder: z.number().int().min(-100000).max(100000).optional(),
+});
+
+function parseImport(input: unknown) {
+  const body = Array.isArray(input) ? { tasks: input } : input;
+  const parsed = z
+    .object({
+      version: z.number().int().optional(),
+      exportedAt: z.string().max(40).optional(),
+      tasks: z.array(ImportTask).max(TASK_CAP),
+    })
+    .parse(body);
+  if (parsed.version !== undefined && parsed.version !== 1) fail();
+  return parsed.tasks;
+}
+
+function softDue(raw: string | null | undefined) {
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+export const importTasks = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => parseImport(input))
+  .handler(async ({ context, data }): Promise<{ imported: number; skipped: number }> => {
+    rateLimit(context.userId);
+    const sql = await getSql();
+    const counted = await sql<{ n: number }>`
+      select count(*)::int as n from tasks where user_id = ${context.userId}
+    `;
+    let room = TASK_CAP - (counted[0]?.n ?? 0);
+    let imported = 0;
+    let skipped = 0;
+    for (const item of data) {
+      const text = plainText(item.text, TASK_MAX);
+      if (!text || room <= 0) {
+        skipped += 1;
+        continue;
+      }
+      let id = item.id ?? crypto.randomUUID();
+      const owner = await sql<{ user_id: string }>`select user_id from tasks where id = ${id}`;
+      if (owner[0]?.user_id === context.userId) {
+        skipped += 1;
+        continue;
+      }
+      if (owner[0]) id = crypto.randomUUID();
+      const rows = await sql<{ id: string }>`
+        insert into tasks (id, user_id, text, done, category, priority, due_at, ends_at, sort_order)
+        values (
+          ${id}, ${context.userId}, ${text}, ${item.done === true},
+          ${item.category ?? "estudo"}, ${item.priority ?? "normal"},
+          ${softDue(item.dueAt)}, ${softDue(item.endsAt)}, ${item.sortOrder ?? imported}
+        )
+        on conflict (id) do nothing
+        returning id
+      `;
+      if (rows[0]) {
+        imported += 1;
+        room -= 1;
+      } else skipped += 1;
+    }
+    return { imported, skipped };
   });
 
 export const reorderTasks = createServerFn({ method: "POST" })
@@ -273,9 +366,14 @@ export const getStreak = createServerFn({ method: "GET" })
     return { streak: Number(rows[0]?.current_streak) || 0 };
   });
 
+const ClearInput = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
 export const recordClear = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async ({ context }): Promise<{ streak: number }> => {
+  .validator((input: unknown) => ClearInput.parse(input ?? {}))
+  .handler(async ({ context, data }): Promise<{ streak: number }> => {
     rateLimit(context.userId);
     const sql = await getSql();
     const pending = await sql<{ n: number }>`
@@ -287,8 +385,8 @@ export const recordClear = createServerFn({ method: "POST" })
       `;
       return { streak: Number(current[0]?.current_streak) || 0 };
     }
-    const today = todayKey();
-    const yesterday = yesterdayKey();
+    const today = trustedDay(data.day);
+    const yesterday = shiftDay(today, -1);
     const rows = await sql<{ current_streak: number; last_clear_date: string | null }>`
       select current_streak, last_clear_date::text as last_clear_date
       from user_streaks where user_id = ${context.userId}

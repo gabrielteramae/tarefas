@@ -9,7 +9,8 @@ import { listCookies, type CookieKind } from "@/lib/cookies";
 import { CONSENT_OFF, type Consent } from "@/lib/consent";
 import { clearStoredKind, listLocalStorage, type StorageKind } from "@/lib/storage";
 import { deleteMyAccount } from "@/lib/account";
-import { deleteAllTasks, exportMyData } from "@/lib/tasks";
+import { BackupActions } from "@/components/backup-actions";
+import { deleteAllTasks } from "@/lib/tasks";
 
 export const Route = createFileRoute("/privacidade")({ component: Privacidade });
 
@@ -26,26 +27,6 @@ function Privacidade() {
     setCookies(listCookies());
     setStored(listLocalStorage());
   }, [consent]);
-
-  const exportData = async () => {
-    setBusy(true);
-    setStatus("");
-    try {
-      const payload = await exportMyData();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "tarefas.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus("Arquivo baixado.");
-    } catch {
-      setStatus("Não exportou. Tente de novo.");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const eraseAccount = async () => {
     if (!window.confirm("Excluir a conta, a senha e as tarefas? Não dá para desfazer.")) return;
@@ -103,7 +84,9 @@ function Privacidade() {
         <li className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
           <span>
             <span className="block text-fg">Cópia neste aparelho</span>
-            <span className="mt-0.5 block text-xs text-subtle">Guarda o login neste aparelho.</span>
+            <span className="mt-0.5 block text-xs text-subtle">
+              Só a sessão. A lista não fica no armazenamento do navegador.
+            </span>
           </span>
           <span className="shrink-0 text-xs text-subtle">{user ? "Guardada" : "Não"}</span>
         </li>
@@ -244,9 +227,7 @@ function Privacidade() {
       </div>
 
       <div className="mt-6 flex flex-col gap-3">
-        <Button variant="ghost" className="w-full border border-border" disabled={busy} onClick={() => void exportData()}>
-          Exportar minhas tarefas
-        </Button>
+        <BackupActions />
         <Button variant="danger" className="w-full border border-border" disabled={busy} onClick={() => void wipe()}>
           Excluir somente a lista
         </Button>

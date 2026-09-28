@@ -11,6 +11,8 @@ import { grokPwaPlugin } from "./scripts/grok-pwa-plugin.mjs";
 // @ts-expect-error JS plugin alongside the TS vite config
 import { appEnvPlugin } from "./scripts/app-env-plugin.mjs";
 import { isMigrationFile } from "./scripts/migration-plan.mjs";
+// @ts-expect-error JS module alongside the TS vite config
+import { SECURITY_HEADERS } from "./server/security-policy.mjs";
 
 /** The files `src/lib/db.ts` globs — same directory, same non-recursive scope. */
 function hasGlobbedMigrations(root: string): boolean {
@@ -142,7 +144,26 @@ function authPopupPlugin(): Plugin {
   };
 }
 
-// `0.0.0.0:8080` is the live-preview contract — don't change host/port.
+function securityHeadersPlugin(): Plugin {
+  const apply = (res: { setHeader: (name: string, value: string) => void }) => {
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(key, value);
+  };
+  return {
+    name: "security-headers",
+    configureServer(server) {
+      server.middlewares.use((_req, res, next) => {
+        apply(res);
+        next();
+      });
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((_req, res, next) => {
+        apply(res);
+        next();
+      });
+    },
+  };
+}
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
 export default defineConfig(({ command, isPreview }) => ({
@@ -164,6 +185,7 @@ export default defineConfig(({ command, isPreview }) => ({
     // Dev-only /__app-env, read by scripts/check-auth-invariant.mjs.
     appEnvPlugin(),
     // PWA head + ?install=1 tutorial page; runs before Start/Nitro.
+    securityHeadersPlugin(),
     grokPwaPlugin(),
     tailwindcss(),
     tanstackStart(),

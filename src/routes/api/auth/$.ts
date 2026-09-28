@@ -5,6 +5,13 @@ import {
   readStoredOAuthClaim,
   sessionTokenFromSetCookie,
 } from "@/lib/auth/oauth-claim-store";
+import {
+  isBrokerAuthorizeUrl,
+  mintPreviewToken,
+  previewHostFrom,
+  readOAuthJump,
+  saveOAuthJump,
+} from "@/lib/preview-oauth-handoff";
 import { strongPassword, attemptCount, tooManyAttempts, validEmail } from "@/lib/security";
 
 function refused(message: string, status: number) {
@@ -73,6 +80,73 @@ function isClaimPath(request: Request) {
   return new URL(request.url).pathname.replace(/\/+$/, "") === "/api/auth/oauth-claim";
 }
 
+function pathOf(request: Request) {
+  return new URL(request.url).pathname.replace(/\/+$/, "");
+}
+
+function previewTokenResponse(request: Request) {
+  const host = previewHostFrom(request);
+  const token = host ? mintPreviewToken(host) : null;
+  if (!token) return new Response(null, { status: 404, headers: { "cache-control": "no-store" } });
+  return Response.json({ token }, { headers: { "cache-control": "no-store" } });
+}
+
+async function jumpResponse(request: Request) {
+  const attempt = new URL(request.url).searchParams.get("attempt") ?? "";
+  if (!/^[0-9a-f]{32}$/.test(attempt)) {
+    return new Response(null, {
+      status: 302,
+      headers: { location: "/login?erro=google", "cache-control": "no-store" },
+    });
+  }
+  // The phone opens this URL before the broker address is saved. Wait for it
+  // instead of failing the attempt on that race.
+  const deadline = Date.now() + 20_000;
+  let url = readOAuthJump(attempt);
+  while (!url && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    url = readOAuthJump(attempt);
+  }
+  if (!url) {
+    await persistOAuthClaim(attempt, { status: "error" });
+    return new Response(null, {
+      status: 302,
+      headers: { location: "/login?erro=google", "cache-control": "no-store" },
+    });
+  }
+  return new Response(null, {
+    status: 302,
+    headers: { location: url, "cache-control": "no-store" },
+  });
+}
+
+async function attemptFromOAuthBody(request: Request): Promise<string | null> {
+  if (!pathOf(request).endsWith("/sign-in/oauth2")) return null;
+  try {
+    const body = (await request.clone().json()) as { callbackURL?: unknown; errorCallbackURL?: unknown };
+    for (const raw of [body.callbackURL, body.errorCallbackURL]) {
+      if (typeof raw !== "string") continue;
+      const attempt = new URL(raw, "http://local").searchParams.get("attempt");
+      if (attempt && /^[0-9a-f]{32}$/.test(attempt)) return attempt;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function rememberJump(attempt: string | null, response: Response) {
+  if (!attempt) return;
+  const type = response.headers.get("content-type") ?? "";
+  if (!type.includes("json")) return;
+  try {
+    const data = (await response.clone().json()) as { url?: unknown };
+    if (typeof data.url === "string" && isBrokerAuthorizeUrl(data.url)) saveOAuthJump(attempt, data.url);
+  } catch {
+    /* sign-in did not return a broker URL */
+  }
+}
+
 async function claimResponse(request: Request) {
   const attempt = new URL(request.url).searchParams.get("attempt") ?? "";
   const result = await readStoredOAuthClaim(attempt);
@@ -101,7 +175,27 @@ function copyResponseHeaders(response: Response) {
   return headers;
 }
 
-async function handOffSession(request: Request, response: Response) {
+function isLoopback(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
+async function attemptForState(state: string | null): Promise<string | null> {
+  if (!state || state.length < 8 || state.length > 200) return null;
+  try {
+    const { getSql } = await import("@/lib/db");
+    const sql = await getSql();
+    const rows = await sql.query<{ value: string }>("select value from verification where identifier = $1", [state]);
+    const raw = rows[0]?.value;
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { callbackURL?: string; errorURL?: string };
+    const attempt = new URL(data.callbackURL || data.errorURL || "/", "http://local").searchParams.get("attempt");
+    return attempt && /^[0-9a-f]{32}$/.test(attempt) ? attempt : null;
+  } catch {
+    return null;
+  }
+}
+
+async function handOffSession(request: Request, response: Response, knownAttempt: string | null = null) {
   const token = sessionTokenFrom(response);
   const location = response.headers.get("location");
   if (!location || response.status < 300 || response.status >= 400) return response;
@@ -112,20 +206,28 @@ async function handOffSession(request: Request, response: Response) {
     return response;
   }
 
-  const attempt = next.searchParams.get("attempt");
-  if (attempt && token) await persistOAuthClaim(attempt, { status: "ok", token });
-  else if (attempt && (next.searchParams.has("erro") || next.searchParams.has("error"))) {
-    await persistOAuthClaim(attempt, { status: "error" });
+  const attempt = next.searchParams.get("attempt") || knownAttempt;
+  if (attempt && !next.searchParams.get("attempt")) next.searchParams.set("attempt", attempt);
+  const callback = new URL(request.url).pathname.includes("/oauth2/callback/");
+  const failed = next.pathname.endsWith("/error") || next.searchParams.has("error") || next.searchParams.has("erro");
+  if (callback && failed && next.pathname !== "/login") {
+    next.pathname = "/login";
+    next.searchParams.set("erro", "google");
+    if (attempt) next.searchParams.set("attempt", attempt);
   }
+
+  if (attempt && token) await persistOAuthClaim(attempt, { status: "ok", token });
+  else if (attempt && failed) await persistOAuthClaim(attempt, { status: "error" });
 
   const here = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
   const publicOrigin = forwardedHost ? `${forwardedProto || "https"}://${forwardedHost}` : here.origin;
-  if (next.origin !== here.origin && next.origin !== publicOrigin) return response;
-  if (!token && !attempt) return response;
+  const loopback = isLoopback(next.hostname);
+  if (!loopback && next.origin !== here.origin && next.origin !== publicOrigin) return response;
+  if (!token && !attempt && !callback) return response;
 
-  if (token) next.searchParams.set("token", token);
+  if (token && !failed) next.searchParams.set("token", token);
   const headers = copyResponseHeaders(response);
   headers.set("location", `${next.pathname}${next.search}${next.hash}`);
   headers.set("cache-control", "no-store");
@@ -137,11 +239,17 @@ export const Route = createFileRoute("/api/auth/$")({
     handlers: {
       GET: async ({ request }) => {
         if (isClaimPath(request)) return claimResponse(request);
-        return handOffSession(request, await auth.handler(request));
+        if (pathOf(request) === "/api/auth/preview-token") return previewTokenResponse(request);
+        if (pathOf(request) === "/api/auth/oauth-jump") return jumpResponse(request);
+        const callback = new URL(request.url).pathname.includes("/oauth2/callback/");
+        const knownAttempt = callback ? await attemptForState(new URL(request.url).searchParams.get("state")) : null;
+        return handOffSession(request, await auth.handler(request), knownAttempt);
       },
       POST: async ({ request }) => {
         if (isClaimPath(request)) return publishClaim(request);
+        const jumpAttempt = await attemptFromOAuthBody(request);
         const response = await guardAuth(request);
+        await rememberJump(jumpAttempt, response);
         return handOffSession(request, response);
       },
     },

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AuthScreen, SettingGroup, SettingRow } from "@/components/auth-screen";
+import { BackupActions } from "@/components/backup-actions";
 import { Button } from "@/components/ui/button";
 import { readPersistence, type PersistenceSnapshot } from "@/lib/persistence";
 
@@ -83,6 +84,9 @@ function Dados() {
       <Button className="mt-6 w-full" disabled={busy} onClick={() => void load()}>
         {busy ? "Atualizando…" : "Atualizar"}
       </Button>
+      <div className="mt-3">
+        <BackupActions onImported={() => void load()} />
+      </div>
       {error ? <p className="mt-3 text-center text-xs text-danger">{error}</p> : null}
     </AuthScreen>
   );

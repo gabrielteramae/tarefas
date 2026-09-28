@@ -108,17 +108,69 @@ function needsAuthPopup(): boolean {
 }
 
 function assignAuthUrl(url: string) {
-  if (isPhone()) {
-    try {
-      if (window.top && window.top !== window.self) {
-        window.top.location.href = url;
-        return;
-      }
-    } catch {
-      /* the frame cannot leave; fall through to this window */
-    }
+  window.location.assign(url);
+}
+
+function handoffUrl(token: string, attempt: string) {
+  const start = new URL("/__grok-preview/auth", window.location.origin);
+  start.searchParams.set("token", token);
+  start.searchParams.set("next", `/api/auth/oauth-jump?attempt=${attempt}`);
+  return start.toString();
+}
+
+/**
+ * Open the preview handoff as the phone browser's first page, on the tap.
+ * about:blank cannot be steered afterwards: that browser is not scriptable,
+ * so it would fall through to Google with no preview cookie and the return
+ * would never reach the app.
+ */
+function openPreviewHandoff(token: string, attempt: string): boolean {
+  const popup = window.open(handoffUrl(token, attempt), "_blank");
+  return Boolean(popup);
+}
+
+let cachedPreviewToken: string | null = null;
+let cachedPreviewTokenUntil = 0;
+let warmingPreviewToken = false;
+
+function rememberPreviewToken(token: string | null) {
+  cachedPreviewToken = token;
+  cachedPreviewTokenUntil = token ? Date.now() + 100_000 : 0;
+}
+
+function takePreviewToken(): string | null {
+  if (!cachedPreviewToken || Date.now() >= cachedPreviewTokenUntil) return null;
+  const token = cachedPreviewToken;
+  rememberPreviewToken(null);
+  warmPreviewHandoff();
+  return token;
+}
+
+async function fetchPreviewHandoffToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/auth/preview-token", { credentials: "same-origin" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { token?: unknown };
+    return typeof body.token === "string" && body.token.split(".").length === 3 ? body.token : null;
+  } catch {
+    return null;
   }
-  window.location.href = url;
+}
+
+function warmPreviewHandoff() {
+  if (typeof window === "undefined" || !isPhone() || !inLivePreview()) return;
+  if (cachedPreviewToken && Date.now() < cachedPreviewTokenUntil - 20_000) return;
+  if (warmingPreviewToken) return;
+  warmingPreviewToken = true;
+  void fetchPreviewHandoffToken().then((token) => {
+    warmingPreviewToken = false;
+    if (token) rememberPreviewToken(token);
+  });
+}
+
+if (typeof window !== "undefined") {
+  warmPreviewHandoff();
+  window.setInterval(() => warmPreviewHandoff(), 60_000);
 }
 
 /** Message the popup posts back to the opener once sign-in completes. */
@@ -150,15 +202,19 @@ export async function signIn(
   // browsers when the opener is a cross-origin live-preview iframe.
   const usePopup = needsAuthPopup();
   const popup = usePopup ? openSignInPopup(providerId) : null;
+  // Phone preview: the other browser has to load the handoff URL on this tap,
+  // before any await. The broker address is stored a moment later; the handoff
+  // waits for it.
+  const phoneHandoff = !usePopup && isPhone() && inLivePreview();
+  const attempt = usePopup ? null : beginOAuthAttempt();
+  const previewToken = phoneHandoff ? takePreviewToken() : null;
+  let openedHandoff = false;
+  if (previewToken && attempt && openPreviewHandoff(previewToken, attempt)) openedHandoff = true;
   try {
     sessionStorage.removeItem(OAUTH_ESCAPE_KEY);
   } catch {
     /* storage blocked */
   }
-  // Phones open Google in another browser. Remember the attempt BEFORE any
-  // await so a storage-blocked webview still has the id when it comes back.
-  // Desktop popups must not take this path.
-  const attempt = usePopup ? null : beginOAuthAttempt();
 
   // Clear any prior session so switching providers actually switches identity.
   // Bounded because the popup is already open — a request that never settles
@@ -195,9 +251,9 @@ export async function signIn(
     return;
   }
 
-  // The cookie from the phone's other browser never reaches this screen, so
-  // the callback stores the session under this attempt and the login page
-  // claims it when that browser closes.
+  // The phone's other browser never shares this frame's cookie. The handoff
+  // page was opened on the tap; this call only stores the broker address it
+  // continues to. Deployed sign-in still redirects straight to the broker.
   const doneURL = attempt ? callbackWithAttempt(callbackURL, attempt) : callbackURL;
   const failURL = attempt ? callbackWithAttempt(errorCallbackURL, attempt) : errorCallbackURL;
 
@@ -212,10 +268,19 @@ export async function signIn(
       clearOAuthAttempt();
       throw new Error(error?.message ?? "Sign-in failed");
     }
-    leaving = true;
-    assignAuthUrl(data.url);
+    if (!openedHandoff) {
+      const late = phoneHandoff && attempt ? previewToken || (await fetchPreviewHandoffToken()) : null;
+      leaving = true;
+      if (late && attempt && !openPreviewHandoff(late, attempt)) assignAuthUrl(handoffUrl(late, attempt));
+      else if (!late) assignAuthUrl(data.url);
+    } else {
+      leaving = true;
+    }
   } catch (err) {
-    if (!leaving) clearOAuthAttempt();
+    if (leaving) return;
+    const message = err instanceof Error ? err.message : "";
+    if (openedHandoff && /failed to fetch|load failed|abort|network/i.test(message)) return;
+    clearOAuthAttempt();
     throw err;
   }
 }

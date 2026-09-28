@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { downloadPhoneCalendar, googleAgendaUrl, phoneCalendarHref } from "@/lib/agenda";
 import { calendarDay, clockOf, formatRange } from "@/lib/dates";
 import type { TaskRow } from "@/lib/tasks";
+import { safeHref } from "@/lib/text";
 import { useTapAction } from "@/lib/use-tap-action";
 import { cn } from "@/lib/utils";
 
@@ -50,8 +51,8 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
   const late = isOverdue(task);
   const editable = openList && !task.done;
   const note = detail(task);
-  const google = googleAgendaUrl(task);
-  const phone = phoneCalendarHref(task);
+  const google = safeHref(googleAgendaUrl(task));
+  const phone = safeHref(phoneCalendarHref(task));
 
   return (
     <li
@@ -79,13 +80,13 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
             onPointerCancel={() => actions.dragCancel()}
             className="grid size-11 shrink-0 touch-none place-items-center text-subtle"
           >
-            <GripVertical className="size-4" />
+            <GripVertical className="size-4" aria-hidden="true" />
           </button>
         ) : null}
         <button
           type="button"
           {...tap(`done-${task.id}`, () => actions.toggle(task.id))}
-          aria-label={task.done ? "Desmarcar tarefa" : "Concluir tarefa"}
+          aria-label={task.done ? `Desmarcar ${task.text}` : `Concluir ${task.text}`}
           className="tap-target grid size-11 shrink-0 place-items-center"
         >
           <span
@@ -94,7 +95,7 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
               task.done ? "border-accent bg-accent text-accent-fg" : "border-border text-transparent",
             )}
           >
-            <Check className="size-3.5" strokeWidth={3} />
+            <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
           </span>
         </button>
         <div className="min-w-0 flex-1 py-2">
@@ -112,16 +113,16 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
               expanded ? "text-accent" : "text-subtle",
             )}
           >
-            <CalendarDays className="size-4" />
+            <CalendarDays className="size-4" aria-hidden="true" />
           </button>
         ) : null}
         <Button
           variant="danger"
           className="h-11 min-w-11 px-2"
-          aria-label="Apagar tarefa"
+          aria-label={`Apagar ${task.text}`}
           {...tap(`del-${task.id}`, () => actions.remove(task.id))}
         >
-          <Trash2 className="size-4" />
+          <Trash2 className="size-4" aria-hidden="true" />
         </Button>
       </div>
       {editable && expanded ? (

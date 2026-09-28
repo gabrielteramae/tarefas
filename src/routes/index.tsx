@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DockNav, type DockTab } from "@/components/dock-nav";
@@ -20,11 +21,13 @@ import {
   type TaskRow,
 } from "@/lib/tasks";
 import { getPrefs } from "@/lib/prefs";
-import { notifyDone, notifyDue } from "@/lib/notify";
-import { AccountMenu } from "@/components/account-menu";
+import { notifyDone, notifyDue, localDay } from "@/lib/notify";
+import { MoreHub } from "@/components/more-hub";
 import { cn } from "@/lib/utils";
 import { useTapAction } from "@/lib/use-tap-action";
 import { calendarDay, clockOf, spanDays, withClock } from "@/lib/dates";
+import { plainText } from "@/lib/text";
+import { publishTasksChanged, subscribeTasksChanged } from "@/lib/tab-sync";
 
 function isUnauthorized(err: unknown) {
   return err instanceof Error && err.message === "Unauthorized";
@@ -46,18 +49,18 @@ function todayParts(date: Date) {
 }
 
 function monthTitle(date: Date) {
-  const text = date.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  const text = date.toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+  const clean = text.replace(".", "");
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
 function Agenda({
   groups,
-  ready,
+  today,
 }: {
   groups: { open: TaskRow[]; days: string[]; byDay: Map<string, TaskRow[]> };
-  ready: boolean;
+  today: Date;
 }) {
-  const today = new Date();
   const todayKey = isoDay(today);
   const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selected, setSelected] = useState(todayKey);
@@ -75,23 +78,15 @@ function Agenda({
   const selectedTasks = [...(groups.byDay.get(selected) ?? [])];
   const tap = useTapAction();
 
-  if (ready && groups.days.length === 0 && groups.open.length === 0) {
-    return (
-      <div className="rounded-3xl bg-surface px-5 py-10 text-center shadow-card">
-        <p className="text-sm text-muted">Nada no calendário</p>
-      </div>
-    );
-  }
-
-    return (
+  return (
       <div className="tab-pane flex flex-col gap-5 pb-28">
       <section className="rounded-3xl bg-surface px-4 py-4 shadow-card">
-        <div className="mb-4 flex items-center justify-between">
-          <button type="button" className="tap-target px-3 py-2 text-lg text-muted" {...tap("prev-month", () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1)))} aria-label="Mês anterior">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <button type="button" className="tap-target grid size-11 place-items-center rounded-full text-muted" {...tap("prev-month", () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1)))} aria-label="Mês anterior">
             ‹
           </button>
-          <p className="text-sm font-medium">{monthTitle(cursor)}</p>
-          <button type="button" className="tap-target px-3 py-2 text-lg text-muted" {...tap("next-month", () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)))} aria-label="Próximo mês">
+          <p className="text-xl font-semibold tracking-tight">{monthTitle(cursor)}</p>
+          <button type="button" className="tap-target grid size-11 place-items-center rounded-full text-muted" {...tap("next-month", () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)))} aria-label="Próximo mês">
             ›
           </button>
         </div>
@@ -166,8 +161,8 @@ function Home() {
   const { user, isPending } = useCurrentUserState();
   if (isPending) {
     return (
-      <main className="min-h-dvh bg-bg px-5 pt-10">
-        <div className="mx-auto h-40 w-full max-w-lg animate-pulse rounded-2xl bg-surface" />
+      <main className="app-frame grid place-items-center text-muted" aria-busy="true">
+        <p className="text-sm">Abrindo…</p>
       </main>
     );
   }
@@ -179,12 +174,15 @@ function TaskBoard() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState("");
+  const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [tab, setTab] = useState<DockTab>("tarefas");
   const [streak, setStreak] = useState(0);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [live, setLive] = useState("");
+  const [clock, setClock] = useState(() => new Date());
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
   const orderRef = useRef<string[] | null>(null);
@@ -195,6 +193,12 @@ function TaskBoard() {
   const tails = useRef(new Map<string, Promise<void>>());
   const filtersRef = useRef({ today: false, late: false, done: false });
   const loadedRef = useRef<TaskRow[] | null>(null);
+  const addingRef = useRef(false);
+  const recentAdd = useRef({ text: "", at: 0 });
+  const inflight = useRef(0);
+  const pendingDeletes = useRef(new Map<string, { task: TaskRow; index: number; timer: number }>());
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
 
   const chain = (id: string, job: () => Promise<void>) => {
     const prev = tails.current.get(id) ?? Promise.resolve();
@@ -245,9 +249,95 @@ function TaskBoard() {
     };
   }, []);
 
+  useEffect(() => {
+    const arm = () => {
+      const now = new Date();
+      setClock(now);
+      const next = new Date(now);
+      next.setHours(24, 0, 2, 0);
+      return window.setTimeout(arm, Math.max(1000, next.getTime() - now.getTime()));
+    };
+    const timer = arm();
+    const onVis = () => {
+      if (document.visibilityState === "visible") setClock(new Date());
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    let timer = 0;
+    const reload = () => {
+      if (inflight.current > 0 || pendingDeletes.current.size > 0 || !loadedRef.current) return;
+      void listTasks()
+        .then((rows) => {
+          if (inflight.current === 0 && pendingDeletes.current.size === 0) commit(rows);
+        })
+        .catch(() => undefined);
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(reload, 150);
+    };
+    const stop = subscribeTasksChanged(schedule);
+    const onVis = () => {
+      if (document.visibilityState === "visible") schedule();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const typing = Boolean(target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable));
+      if (event.key === "Escape") {
+        setOpenId(null);
+        if (typing) target?.blur();
+        return;
+      }
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      const order: DockTab[] = ["tarefas", "hoje", "feitas", "mais"];
+      const inDock = Boolean(target?.closest("nav[aria-label='Seções']"));
+      if (inDock && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+        event.preventDefault();
+        const index = order.indexOf(tabRef.current);
+        const next = event.key === "ArrowRight" ? (index + 1) % order.length : (index + order.length - 1) % order.length;
+        const tab = order[next];
+        if (tab) setTab(tab);
+      }
+      if (event.key === "n" && tabRef.current === "tarefas") {
+        document.getElementById("nova-tarefa")?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const focusComposer = (event: { currentTarget: HTMLInputElement }) => {
+    const el = event.currentTarget;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.setTimeout(() => {
+      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    }, 280);
+  };
+
   const add = async () => {
-    const text = draft.trim();
+    if (addingRef.current) return;
+    const text = plainText(draft, 80);
     if (!text) return;
+    const now = Date.now();
+    if (recentAdd.current.text === text && now - recentAdd.current.at < 900) return;
+    addingRef.current = true;
+    recentAdd.current = { text, at: now };
+    setAdding(true);
     setDraft("");
     const id = crypto.randomUUID();
     const temp: TaskRow = {
@@ -262,18 +352,27 @@ function TaskBoard() {
     };
     tasksRef.current = [temp, ...tasksRef.current];
     commit(tasksRef.current);
+    inflight.current += 1;
     chain(id, async () => {
-      const local = tasksRef.current.find((task) => task.id === id);
-      if (!local) return;
       try {
-        await addTask({
+        const local = tasksRef.current.find((task) => task.id === id);
+        if (!local) return;
+        const saved = await addTask({
           data: { id, text: local.text, category: local.category, dueAt: local.dueAt, sortOrder: local.sortOrder },
         });
+        if (saved.id !== id) commit(tasksRef.current.filter((task) => task.id !== id));
+        else commit(tasksRef.current.map((task) => (task.id === id ? { ...task, text: saved.text } : task)));
+        publishTasksChanged();
+        setLive(`Adicionada: ${saved.text}`);
       } catch (err) {
         if (isUnauthorized(err)) return;
         if (!tasksRef.current.some((task) => task.id === id)) return;
         commit(tasksRef.current.filter((task) => task.id !== id));
         setDraft(text);
+      } finally {
+        inflight.current -= 1;
+        addingRef.current = false;
+        setAdding(false);
       }
     });
   };
@@ -283,38 +382,75 @@ function TaskBoard() {
     const willDone = !current?.done;
     const next = tasksRef.current.map((task) => (task.id === id ? { ...task, done: !task.done } : task));
     commit(next);
+    if (current) setLive(willDone ? `Concluída: ${current.text}` : `Reaberta: ${current.text}`);
     if (willDone && filtersRef.current.done && current) notifyDone(id, current.text);
+    inflight.current += 1;
     chain(id, async () => {
-      const desired = tasksRef.current.find((task) => task.id === id)?.done;
-      if (desired === undefined) return;
       try {
+        const desired = tasksRef.current.find((task) => task.id === id)?.done;
+        if (desired === undefined) return;
         let row = await toggleTask({ data: { id } });
         if (row.done !== desired) row = await toggleTask({ data: { id } });
         if (desired && tasksRef.current.every((task) => task.done)) {
-          const cleared = await recordClear().catch(() => null);
+          const cleared = await recordClear({ data: { day: localDay() } }).catch(() => null);
           if (cleared) setStreak(cleared.streak);
         }
+        publishTasksChanged();
       } catch (err) {
         if (isUnauthorized(err)) return;
         const rows = await listTasks().catch(() => null);
         if (rows) commit(rows);
+      } finally {
+        inflight.current -= 1;
       }
     });
   };
 
-  const remove = async (id: string) => {
-    if (confirmDelete && !window.confirm("Apagar esta tarefa?")) return;
+  const restore = (id: string) => {
+    const pending = pendingDeletes.current.get(id);
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingDeletes.current.delete(id);
+    if (tasksRef.current.some((item) => item.id === id)) return;
+    const next = [...tasksRef.current];
+    next.splice(Math.min(pending.index, next.length), 0, pending.task);
+    commit(next);
+    setLive(`Restaurada: ${pending.task.text}`);
+  };
+
+  const remove = (id: string) => {
     const snapshot = tasksRef.current;
-    commit(snapshot.filter((task) => task.id !== id));
-    chain(id, async () => {
-      try {
-        await removeTask({ data: { id } });
-      } catch (err) {
-        if (isUnauthorized(err)) return;
-        const rows = await listTasks().catch(() => null);
-        if (rows) commit(rows);
-        else commit(snapshot);
-      }
+    const index = snapshot.findIndex((task) => task.id === id);
+    const task = snapshot[index];
+    if (!task || pendingDeletes.current.has(id)) return;
+    if (confirmDelete && !window.confirm("Apagar esta tarefa?")) return;
+    commit(snapshot.filter((item) => item.id !== id));
+    setLive(`Apagada: ${task.text}. Dá para desfazer.`);
+    const timer = window.setTimeout(() => {
+      pendingDeletes.current.delete(id);
+      inflight.current += 1;
+      chain(id, async () => {
+        try {
+          await removeTask({ data: { id } });
+          publishTasksChanged();
+        } catch (err) {
+          if (isUnauthorized(err)) return;
+          const rows = await listTasks().catch(() => null);
+          if (rows) commit(rows);
+          else if (!tasksRef.current.some((item) => item.id === id)) {
+            const next = [...tasksRef.current];
+            next.splice(Math.min(index, next.length), 0, task);
+            commit(next);
+          }
+        } finally {
+          inflight.current -= 1;
+        }
+      });
+    }, 5000);
+    pendingDeletes.current.set(id, { task, index, timer });
+    toast("Tarefa apagada", {
+      duration: 5000,
+      action: { label: "Desfazer", onClick: () => restore(id) },
     });
   };
 
@@ -326,6 +462,7 @@ function TaskBoard() {
     try {
       await Promise.all([...tails.current.values()]);
       await reorderTasks({ data: { ids } });
+      publishTasksChanged();
     } catch (err) {
       if (isUnauthorized(err)) return;
     }
@@ -423,6 +560,7 @@ function TaskBoard() {
     chain(task.id, async () => {
       try {
         await setTaskSpan({ data: { id: task.id, startAt, endAt } });
+        publishTasksChanged();
       } catch (err) {
         if (isUnauthorized(err) || !previous) return;
         const restored = tasksRef.current.map((item) => (item.id === task.id ? previous : item));
@@ -460,6 +598,7 @@ function TaskBoard() {
     tarefas: "Lista",
     hoje: "Calendário",
     feitas: "Feitas",
+    mais: "Mais",
   };
 
   const stats = useMemo(() => {
@@ -492,30 +631,26 @@ function TaskBoard() {
     return { open, days: [...byDay.keys()].sort(), byDay };
   }, [tasks]);
 
-  const today = new Date();
+  const today = clock;
   const parts = todayParts(today);
-  const openLabel = !ready ? "Carregando…" : stats.open === 0 ? "Nada para fazer" : stats.open === 1 ? "1 para fazer" : `${stats.open} para fazer`;
+  const openLabel = stats.open === 0 ? "Nada para fazer" : stats.open === 1 ? "1 para fazer" : `${stats.open} para fazer`;
 
   return (
     <main className="app-frame text-fg">
       <div className="app-shell mx-auto w-full max-w-lg">
-        <header className="mb-5 flex shrink-0 items-center justify-between gap-3">
+        <header className="mb-5 shrink-0">
           {tab === "tarefas" ? (
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight">{parts.title}</h1>
               <p className="mt-1 text-sm text-muted">
                 {parts.weekday}
-                {" · "}
-                {openLabel}
+                {ready ? ` · ${openLabel}` : ""}
                 {streak > 0 ? ` · ${streak} ${streak === 1 ? "dia seguido" : "dias seguidos"}` : ""}
               </p>
             </div>
           ) : (
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{titles[tab]}</h1>
-            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">{titles[tab]}</h1>
           )}
-          <AccountMenu />
         </header>
 
         {tab === "tarefas" ? (
@@ -530,13 +665,16 @@ function TaskBoard() {
               <Input
                 value={draft}
                 maxLength={80}
+                enterKeyHint="done"
                 onChange={(event) => setDraft(event.target.value)}
+                onFocus={focusComposer}
                 id="nova-tarefa"
                 placeholder="O que precisa ser feito?"
                 aria-label="Nova tarefa"
+                autoComplete="off"
               />
-              <Button type="submit" aria-label="Adicionar tarefa" className="shrink-0">
-                <Plus className="size-5" strokeWidth={2} />
+              <Button type="submit" aria-label="Adicionar tarefa" className="shrink-0" disabled={adding}>
+                <Plus className="size-5" strokeWidth={2} aria-hidden="true" />
               </Button>
             </div>
           </form>
@@ -546,6 +684,7 @@ function TaskBoard() {
           <div className="mb-4 shrink-0">
             <Input
               value={query}
+              maxLength={80}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar"
               aria-label="Buscar tarefa"
@@ -572,7 +711,9 @@ function TaskBoard() {
 
         <PhoneScroll>
           {tab === "hoje" ? (
-            <Agenda groups={agenda} ready={ready} />
+            <Agenda groups={agenda} today={clock} />
+          ) : tab === "mais" ? (
+            <MoreHub />
           ) : (
             <ul key={tab} className="tab-pane flex flex-col gap-3 pb-28">
               {ready && visible.length === 0 ? (
@@ -598,6 +739,9 @@ function TaskBoard() {
       </div>
 
       <DockNav tab={tab} onChange={setTab} />
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {live}
+      </p>
     </main>
   );
 }

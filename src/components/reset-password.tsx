@@ -245,8 +245,8 @@ export function ResetPassword({
                 placeholder="Nova senha"
                 required
               />
-              <button type="button" className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center text-subtle" aria-label={show ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShow((value) => !value)}>
-                {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              <button type="button" className="absolute top-1/2 right-1 grid size-11 -translate-y-1/2 place-items-center text-subtle" aria-label={show ? "Ocultar senha" : "Mostrar senha"} onClick={() => setShow((value) => !value)}>
+                {show ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
               </button>
             </div>
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-2">

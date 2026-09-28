@@ -57,13 +57,12 @@ function Login() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("erro") === "google") {
-      setError("O Google não entrou. Tente de novo.");
-    }
-    setGoogleWait(Boolean(peekOAuthAttempt()));
+    const failed = params.get("erro") === "google";
+    const pendingAttempt = Boolean(peekOAuthAttempt());
+    if (failed && !pendingAttempt) setError("O Google não entrou. Tente de novo.");
+    setGoogleWait(pendingAttempt);
     let gone = false;
     let polling = false;
-    let waiting = Boolean(peekOAuthAttempt());
     const resume = () => {
       if (gone || !getBearerToken()) return;
       void authClient.getSession().then(({ data }) => {
@@ -72,15 +71,7 @@ function Login() {
     };
     const poll = () => {
       if (gone || polling) return;
-      if (!peekOAuthAttempt()) {
-        if (waiting) {
-          waiting = false;
-          setGoogleWait(false);
-          setError("O Google não entrou. Tente de novo.");
-        }
-        return;
-      }
-      waiting = true;
+      if (!peekOAuthAttempt()) return;
       polling = true;
       void pullOAuthAttempt()
         .then((result) => {
@@ -90,8 +81,7 @@ function Login() {
             window.location.replace("/");
             return;
           }
-          if (result.status === "error" || !peekOAuthAttempt()) {
-            waiting = false;
+          if (result.status === "error") {
             setGoogleWait(false);
             setError("O Google não entrou. Tente de novo.");
           }
@@ -119,11 +109,7 @@ function Login() {
     };
   }, []);
 
-  if (isPending) {
-    return (
-      <main className="min-h-dvh bg-bg" aria-label="Abrindo o app" />
-    );
-  }
+  if (isPending) return null;
 
   if (user) return <Navigate to="/" />;
 
@@ -234,16 +220,16 @@ function Login() {
                   />
                   <button
                     type="button"
-                    className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center text-subtle hover:text-fg"
+                    className="absolute top-1/2 right-1 grid size-11 -translate-y-1/2 place-items-center text-subtle hover:text-fg"
                     aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                     onClick={() => setShowPassword((v) => !v)}
                   >
-                    {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                   </button>
                 </div>
               </div>
               {mode === "signin" ? (
-                <button type="button" className="self-end text-xs font-medium text-accent" onClick={() => setResetting(true)}>
+                <button type="button" className="inline-flex min-h-11 items-center self-end text-sm font-medium text-accent" onClick={() => setResetting(true)}>
                   Esqueci a senha
                 </button>
               ) : null}

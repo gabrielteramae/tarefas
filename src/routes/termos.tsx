@@ -20,13 +20,13 @@ function Termos() {
     <LegalScreen title="Termos e direitos">
       <p className="text-sm text-muted">Atualizado em {UPDATED}.</p>
       <nav className="mt-4 flex flex-wrap gap-2 text-sm">
-        <a href="#uso" className="rounded-full border border-border px-3 py-1.5 text-fg">
+        <a href="#uso" className="inline-flex min-h-11 items-center rounded-full border border-border px-4 text-fg">
           Termos de uso
         </a>
-        <a href="#privacidade" className="rounded-full border border-border px-3 py-1.5 text-fg">
+        <a href="#privacidade" className="inline-flex min-h-11 items-center rounded-full border border-border px-4 text-fg">
           Privacidade
         </a>
-        <a href="#direitos" className="rounded-full border border-border px-3 py-1.5 text-fg">
+        <a href="#direitos" className="inline-flex min-h-11 items-center rounded-full border border-border px-4 text-fg">
           Direitos
         </a>
       </nav>

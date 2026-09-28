@@ -86,7 +86,7 @@ export function peekOAuthAttempt(): string | null {
   const id = memoryAttempt && ATTEMPT.test(memoryAttempt) ? memoryAttempt : readStoredAttempt();
   if (!id) return null;
   const at = memoryAt || storedAt();
-  if (at && Date.now() - at > 90_000) {
+  if (at && Date.now() - at > 180_000) {
     clearOAuthAttempt();
     return null;
   }

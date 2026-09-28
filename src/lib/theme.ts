@@ -1,18 +1,27 @@
-export type ThemeMode = "dark" | "light";
+export type ThemeMode = "dark" | "light" | "system";
 
-export const THEME_STORAGE_KEY = "dino-theme";
+export const THEME_STORAGE_KEY = "tarefas-theme";
+const LEGACY_THEME_KEY = "dino-theme";
 
 export function isThemeMode(value: unknown): value is ThemeMode {
-  return value === "dark" || value === "light";
+  return value === "dark" || value === "light" || value === "system";
+}
+
+export function resolveTheme(choice: ThemeMode): "dark" | "light" {
+  if (choice === "light" || choice === "dark") return choice;
+  if (typeof window === "undefined") return "dark";
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
 export function readStoredTheme(): ThemeMode {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "system";
   try {
-    return localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+    const stored = localStorage.getItem(THEME_STORAGE_KEY) ?? localStorage.getItem(LEGACY_THEME_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
   } catch {
-    return "dark";
+    /* private mode */
   }
+  return "system";
 }
 
 function persistThemeAllowed() {
@@ -26,8 +35,22 @@ function persistThemeAllowed() {
   }
 }
 
-export function applyTheme(theme: ThemeMode) {
+let media: MediaQueryList | null = null;
+let onMedia: (() => void) | null = null;
+
+function watchSystem(choice: ThemeMode) {
+  if (onMedia && media) media.removeEventListener("change", onMedia);
+  media = null;
+  onMedia = null;
+  if (choice !== "system" || typeof window === "undefined") return;
+  media = window.matchMedia("(prefers-color-scheme: light)");
+  onMedia = () => applyTheme("system");
+  media.addEventListener("change", onMedia);
+}
+
+export function applyTheme(choice: ThemeMode) {
   if (typeof document === "undefined") return;
+  const theme = resolveTheme(choice);
   const root = document.documentElement;
   const previous = root.dataset.theme;
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -37,11 +60,17 @@ export function applyTheme(theme: ThemeMode) {
     window.setTimeout(() => root.classList.remove("theme-swap"), 380);
   }
   root.dataset.theme = theme;
-  document.documentElement.style.colorScheme = theme;
+  root.style.colorScheme = theme;
+  const bar = theme === "light" ? "#f6f3ee" : "#09090b";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bar);
+  document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", theme);
   try {
-    if (persistThemeAllowed()) localStorage.setItem(THEME_STORAGE_KEY, theme);
+    if (persistThemeAllowed()) {
+      localStorage.setItem(THEME_STORAGE_KEY, choice);
+      localStorage.removeItem(LEGACY_THEME_KEY);
+    }
   } catch {
-    /* ignore */
+    /* private mode */
   }
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f3f6f3" : "#09090b");
+  watchSystem(choice);
 }

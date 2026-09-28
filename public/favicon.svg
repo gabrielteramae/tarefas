@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="16" fill="#4dba62"/>
-  <rect x="22.5" y="11" width="5" height="11" rx="2.5" fill="#09090b"/>
-  <rect x="36.5" y="11" width="5" height="11" rx="2.5" fill="#09090b"/>
-  <rect x="15" y="18.5" width="34" height="32" rx="6.5" fill="none" stroke="#09090b" stroke-width="3.4"/>
-  <circle cx="25.8" cy="34.2" r="5.15" fill="#09090b"/>
-  <circle cx="27.7" cy="34.2" r="1.7" fill="#4dba62"/>
-  <circle cx="38.2" cy="34.2" r="5.15" fill="#09090b"/>
-  <circle cx="40.1" cy="34.2" r="1.7" fill="#4dba62"/>
+  <rect width="64" height="64" rx="18" fill="#4dba62"/>
+  <rect x="22.5" y="10" width="5.2" height="12" rx="2.6" fill="#09090b"/>
+  <rect x="36.3" y="10" width="5.2" height="12" rx="2.6" fill="#09090b"/>
+  <rect x="14.5" y="18" width="35" height="33" rx="7" fill="none" stroke="#09090b" stroke-width="3.6"/>
+  <circle cx="25.6" cy="34.4" r="5.2" fill="#09090b"/>
+  <circle cx="27.5" cy="34.4" r="1.7" fill="#4dba62"/>
+  <circle cx="38.4" cy="34.4" r="5.2" fill="#09090b"/>
+  <circle cx="40.3" cy="34.4" r="1.7" fill="#4dba62"/>
 </svg>

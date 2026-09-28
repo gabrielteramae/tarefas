@@ -1,5 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { CookieConsent } from "@/components/cookie-consent";
@@ -24,9 +24,9 @@ export const Route = createRootRoute({
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      { name: "apple-mobile-web-app-title", content: APP_NAME },
       { name: "format-detection", content: "telephone=no" },
       { title: APP_NAME },
-      { name: "theme-color", content: "#09090b" },
       {
         name: "description",
         content: APP_DESCRIPTION,
@@ -35,8 +35,8 @@ export const Route = createRootRoute({
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
     ],
   }),
   component: Root,
@@ -87,7 +87,7 @@ function ViewportFrame() {
 }
 
 function ThemeSync() {
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyTheme(readStoredTheme());
     void getPrefs()
       .then((prefs) => applyTheme(prefs.theme))
@@ -148,15 +148,29 @@ function Root() {
   return (
     <html lang="pt-BR" data-theme="dark" suppressHydrationWarning>
       <head>
+        <meta name="color-scheme" content="dark light" />
+        <meta name="theme-color" content="#09090b" />
         <script
           dangerouslySetInnerHTML={{
             __html:
-              '(function(){document.documentElement.dataset.splash="on"})();(function(){var broker="https://auth.grok.me";function target(href){try{var url=new URL(href,location.origin);if(url.origin!==location.origin)return null;var path=url.pathname.replace(/\\/+$/,"")||"/";if(path==="/sign-in"||path==="/api/auth/oauth2/authorize")return broker+path+url.search;if(path==="/auth/popup")return url.href;return null}catch(e){return null}}function leave(href){var next=target(href);if(!next)return false;if(next===location.href){try{if(sessionStorage.getItem("grok-auth.popup-reload")===next)return false;sessionStorage.setItem("grok-auth.popup-reload",next)}catch(e){}location.replace(next);return true}location.replace(next);return true}if(leave(location.href))return;var push=history.pushState,replace=history.replaceState;history.pushState=function(s,t,url){if(url&&leave(String(url)))return;return push.apply(this,arguments)};history.replaceState=function(s,t,url){if(url&&leave(String(url)))return;return replace.apply(this,arguments)};window.addEventListener("popstate",function(){leave(location.href)})})();(function(){try{var p=new URLSearchParams(location.search);var t=p.get("token");if(t){try{localStorage.setItem("grok-auth.bearer-token",t)}catch(e){}p.delete("token");var q=p.toString();history.replaceState(null,"",location.pathname+(q?"?"+q:"")+location.hash)}var a=p.get("attempt");if(a&&/^[0-9a-f]{32}$/.test(a)){try{localStorage.setItem("grok-auth.oauth-attempt",a)}catch(e){}fetch("/api/auth/oauth-claim?attempt="+encodeURIComponent(a),{method:"POST",credentials:"same-origin",cache:"no-store",keepalive:true})}}catch(e){}})();(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("dino-theme")==="light"?"light":"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})()',
+              '(function(){try{if(sessionStorage.getItem("tarefas-opened")==="1"){document.documentElement.removeAttribute("data-splash")}else{document.documentElement.dataset.splash="on"}}catch(e){document.documentElement.dataset.splash="on"}})();(function(){var broker="https://auth.grok.me";function target(href){try{var url=new URL(href,location.origin);if(url.origin!==location.origin)return null;var path=url.pathname.replace(/\\/+$/,"")||"/";if(path==="/sign-in"||path==="/api/auth/oauth2/authorize")return broker+path+url.search;if(path==="/auth/popup")return url.href;return null}catch(e){return null}}function leave(href){var next=target(href);if(!next)return false;if(next===location.href){try{if(sessionStorage.getItem("grok-auth.popup-reload")===next)return false;sessionStorage.setItem("grok-auth.popup-reload",next)}catch(e){}location.replace(next);return true}location.replace(next);return true}if(leave(location.href))return;var push=history.pushState,replace=history.replaceState;history.pushState=function(s,t,url){if(url&&leave(String(url)))return;return push.apply(this,arguments)};history.replaceState=function(s,t,url){if(url&&leave(String(url)))return;return replace.apply(this,arguments)};window.addEventListener("popstate",function(){leave(location.href)})})();(function(){try{var p=new URLSearchParams(location.search);var t=p.get("token");if(t){try{localStorage.setItem("grok-auth.bearer-token",t)}catch(e){}p.delete("token");var q=p.toString();history.replaceState(null,"",location.pathname+(q?"?"+q:"")+location.hash)}var a=p.get("attempt");if(a&&/^[0-9a-f]{32}$/.test(a)){try{localStorage.setItem("grok-auth.oauth-attempt",a)}catch(e){}fetch("/api/auth/oauth-claim?attempt="+encodeURIComponent(a),{method:"POST",credentials:"same-origin",cache:"no-store",keepalive:true})}}catch(e){}})();(function(){try{var stored=localStorage.getItem("tarefas-theme")||localStorage.getItem("dino-theme");var choice=stored==="light"||stored==="dark"||stored==="system"?stored:"system";var light=choice==="light"||(choice!=="dark"&&matchMedia("(prefers-color-scheme: light)").matches);var theme=light?"light":"dark";document.documentElement.setAttribute("data-theme",theme)}catch(e){document.documentElement.setAttribute("data-theme","dark")}})()',
+          }}
+        />
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              "html,body{background:#09090b;color:#f4f4f5}html{color-scheme:dark}html[data-theme=light],html[data-theme=light] body{background:#f6f3ee;color:#1c1c1c}html[data-theme=light]{color-scheme:light}",
           }}
         />
         <HeadContent />
       </head>
       <body>
+        <noscript
+          dangerouslySetInnerHTML={{
+            __html:
+              '<div style="min-height:100dvh;display:grid;place-items:center;padding:2rem;text-align:center;font-family:system-ui,sans-serif"><p style="font-size:1.5rem;font-weight:600;margin:0">Tarefas</p><p style="margin-top:0.75rem">Ative o JavaScript para abrir a lista.</p></div>',
+          }}
+        />
         <ThemeSync />
         <ViewportFrame />
         <OAuthResume />
@@ -166,8 +180,8 @@ function Root() {
           <div className="app-enter">
             <Outlet />
           </div>
+          <OpenSplash />
         </AuthProvider>
-        <OpenSplash />
         <CookieConsent />
         <Toaster />
         <Scripts />
