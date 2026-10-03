@@ -15,8 +15,8 @@ const ITEMS: Array<{ id: DockTab; label: string; icon: LucideIcon }> = [
 export function DockNav({ tab, onChange }: { tab: DockTab; onChange: (tab: DockTab) => void }) {
   const tap = useTapAction();
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
-      <nav aria-label="Seções" className="mx-auto flex max-w-lg items-end">
+    <div className="dock-bar shrink-0 border-t border-border bg-surface px-1 pt-1">
+      <nav aria-label="Seções" className="mx-auto grid max-w-lg grid-cols-4">
         {ITEMS.map((item) => {
           const active = tab === item.id;
           const Icon = item.icon;
@@ -27,12 +27,12 @@ export function DockNav({ tab, onChange }: { tab: DockTab; onChange: (tab: DockT
               aria-current={active ? "page" : undefined}
               {...tap(item.id, () => onChange(item.id))}
               className={cn(
-                "tap-target flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl text-xs transition-colors duration-150",
+                "tap-target flex h-14 min-h-14 w-full min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-0.5 text-[11px] leading-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:outline-none sm:text-xs",
                 active ? "text-accent" : "text-subtle",
               )}
             >
               <Icon className="size-5" strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" />
-              {item.label}
+              <span className="max-w-full truncate">{item.label}</span>
             </button>
           );
         })}

@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Check, ChevronLeft, Eye, EyeOff, KeyRound, Lock, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/field-error";
 import { CodeBoxes } from "@/components/code-boxes";
 import { Input } from "@/components/ui/input";
+import { cleanEmail, confirmPasswordProblem, emailProblem, newPasswordProblem } from "@/lib/form";
 import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | "done";
@@ -50,16 +52,22 @@ export function ResetPassword({
 
   const checks = RULES.map((rule) => ({ ...rule, ok: rule.test(password) }));
   const matched = password.length > 0 && password === confirm;
-  const ready = checks.every((rule) => rule.ok) && matched;
   const score = checks.filter((rule) => rule.ok).length;
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
     if (busy) return;
+    const clean = cleanEmail(email);
+    const problem = emailProblem(email);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setEmail(clean);
     setBusy(true);
     setError("");
     try {
-      const result = await post({ step: "send", email });
+      const result = await post({ step: "send", email: clean });
       if (!result.ok || !result.code) {
         setError(result.error ?? "Não enviou. Tente de novo.");
         return;
@@ -103,7 +111,12 @@ export function ResetPassword({
 
   const reset = async (event: FormEvent) => {
     event.preventDefault();
-    if (busy || !ready) return;
+    if (busy) return;
+    const problem = newPasswordProblem(password) || confirmPasswordProblem(password, confirm);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -158,7 +171,7 @@ export function ResetPassword({
         </div>
 
         {step === 1 ? (
-          <form className="flex flex-col" onSubmit={send}>
+          <form className="fade-in flex flex-col" noValidate onSubmit={send}>
             <Lock className="size-7 text-accent" />
             <h1 className="mt-4 text-2xl font-semibold tracking-tight">Esqueceu a senha?</h1>
             <p className="mt-2 text-sm text-muted">Informe o e-mail. O código aparece aqui.</p>
@@ -170,13 +183,17 @@ export function ResetPassword({
                 autoComplete="email"
                 maxLength={254}
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "reset-email-error" : undefined}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (error) setError("");
+                }}
                 className="pl-10"
                 placeholder="E-mail"
-                required
               />
             </div>
-            {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
+            <FieldError id="reset-email-error">{error}</FieldError>
             <Button type="submit" disabled={busy} className="mt-4 h-12 w-full">
               {busy ? "Enviando…" : "Enviar código"}
             </Button>
@@ -229,7 +246,7 @@ export function ResetPassword({
         ) : null}
 
         {step === 3 ? (
-          <form onSubmit={reset}>
+          <form className="fade-in" noValidate onSubmit={reset}>
             <KeyRound className="size-7 text-accent" />
             <h1 className="mt-4 text-2xl font-semibold tracking-tight">Nova senha</h1>
             <p className="mt-2 text-sm text-muted">Escolha uma senha nova.</p>
@@ -251,7 +268,7 @@ export function ResetPassword({
             </div>
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-2">
               <div
-                className={cn("h-full transition-[width]", score < 3 ? "bg-danger" : "bg-accent")}
+                className={cn("h-full transition-[width] duration-300 ease-out", score < 3 ? "bg-danger" : "bg-accent")}
                 style={{ width: `${(score / RULES.length) * 100}%` }}
               />
             </div>
@@ -281,8 +298,8 @@ export function ResetPassword({
                 As senhas conferem
               </li>
             </ul>
-            {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
-            <Button type="submit" disabled={!ready || busy} className="mt-4 h-12 w-full">
+            {error ? <p className="field-error mt-3 text-xs text-danger" role="alert">{error}</p> : null}
+            <Button type="submit" disabled={busy} className="mt-4 h-12 w-full">
               {busy ? "Atualizando…" : "Atualizar senha"}
             </Button>
           </form>

@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
-import { ChevronLeft } from "lucide-react";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { BackButton } from "@/components/back-button";
 
 export function AuthScreen({ title, children }: { title: string; children: ReactNode }) {
   const { user, isPending } = useCurrentUserState();
@@ -13,17 +12,11 @@ export function AuthScreen({ title, children }: { title: string; children: React
     <main className="min-h-dvh bg-bg text-fg">
       <div className="page-shell mx-auto w-full max-w-lg">
         <header className="mb-7 grid grid-cols-[2.75rem_1fr_2.75rem] items-center">
-          <Link
-            to="/"
-            aria-label="Voltar"
-            className="grid size-11 place-items-center rounded-full bg-surface text-fg tap-target"
-          >
-            <ChevronLeft className="size-5" />
-          </Link>
+          <BackButton className="grid size-11 place-items-center rounded-full bg-surface text-fg tap-target" />
           <h1 className="truncate text-center text-lg font-semibold tracking-tight">{title}</h1>
           <span />
         </header>
-        {children}
+        <div className="fade-in">{children}</div>
       </div>
     </main>
   );

@@ -1,3 +1,25 @@
+/** Horário local: noite até 6h, manhã até 12h, tarde até 18h. */
+export function dayGreeting(date = new Date()) {
+  const hour = date.getHours();
+  if (hour >= 6 && hour < 12) return "Bom dia!";
+  if (hour >= 12 && hour < 18) return "Boa tarde!";
+  return "Boa noite!";
+}
+
+/** Próximo instante local em que o cumprimento ou o dia mudam. */
+export function nextGreetingChange(date = new Date()) {
+  const hour = date.getHours();
+  const next = new Date(date);
+  const mark = [6, 12, 18].find((item) => item > hour);
+  if (mark != null) {
+    next.setHours(mark, 0, 0, 0);
+    return next;
+  }
+  next.setDate(next.getDate() + 1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
 export function calendarDay(iso: string | null | undefined) {
   if (!iso) return "";
   const match = iso.match(/(\d{4}-\d{2}-\d{2})/);

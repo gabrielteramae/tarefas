@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { dbSource, getSql } from "@/lib/db";
+import { plainText } from "@/lib/text";
 
 export type StoredTask = {
   id: string;
@@ -59,7 +60,7 @@ export const readPersistence = createServerFn({ method: "GET" })
       newestAt: head?.newest_at ?? null,
       rows: rows.map((row) => ({
         id: row.id,
-        text: row.text,
+        text: plainText(row.text, 80) || "Tarefa",
         done: Boolean(row.done),
         dueAt: row.due_at,
         createdAt: row.created_at,

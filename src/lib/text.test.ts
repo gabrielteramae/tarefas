@@ -4,8 +4,12 @@ import { plainText, safeHref } from "./text.ts";
 
 test("texto de tarefa não vira HTML", () => {
   assert.equal(plainText("<img src=x onerror=alert(1)> comprar pão"), "comprar pão");
+  assert.equal(plainText("<script>alert(1)</script>"), "alert(1)");
+  assert.equal(plainText("<<script>script>alert(1)</script>").includes("<"), false);
+  assert.equal(plainText("<<script>script>alert(1)</script>").includes(">"), false);
   assert.equal(plainText("  linha\n\nnova  ", 80), "linha nova");
   assert.equal(plainText("a".repeat(200), 80).length, 80);
+  assert.equal(plainText("a".repeat(500), 80).length, 80);
 });
 
 test("link javascript: e data: não passam", () => {

@@ -5,15 +5,26 @@ import { GROK_PROVIDERS, authClient, authEnabled, getBearerToken, keepSignedIn, 
 import { peekOAuthAttempt, pullOAuthAttempt } from "@/lib/auth/oauth-attempt";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/field-error";
 import { ResetPassword } from "@/components/reset-password";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { strongPassword, validEmail } from "@/lib/security";
+import { cleanEmail, emailProblem, newPasswordProblem, signInPasswordProblem } from "@/lib/form";
 import { toast } from "sonner";
+import { trackEvent } from "@/lib/events";
 
-export const Route = createFileRoute("/login")({ component: Login });
+export const Route = createFileRoute("/login")({
+  head: () => ({
+    meta: [
+      { title: "Entrar — Tarefas" },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
+  }),
+  component: Login,
+});
 
 const GENERIC_AUTH_ERROR = "E-mail ou senha incorretos.";
 const PASSWORD_RULE = "Mínimo 8 caracteres, com maiúscula, minúscula, número e símbolo.";
@@ -53,6 +64,8 @@ function Login() {
   const [busy, setBusy] = useState(false);
   const [googleWait, setGoogleWait] = useState(false);
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
@@ -120,13 +133,17 @@ function Login() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!authEnabled || busy) return;
-    const cleanEmail = email.trim().toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g, "");
-    if (!validEmail(cleanEmail) || password.length < 8 || password.length > 128) {
-      setError(GENERIC_AUTH_ERROR);
+    const clean = cleanEmail(email);
+    const nextEmail = emailProblem(email);
+    const nextPassword = mode === "signup" ? newPasswordProblem(password) : signInPasswordProblem(password);
+    setEmailError(nextEmail);
+    setPasswordError(nextPassword);
+    if (nextEmail || nextPassword) {
+      setError("");
       return;
     }
-    if (mode === "signup" && !strongPassword(password)) {
-      setError(PASSWORD_RULE);
+    if (!validEmail(clean) || (mode === "signup" && !strongPassword(password))) {
+      setError(GENERIC_AUTH_ERROR);
       return;
     }
     setBusy(true);
@@ -141,9 +158,9 @@ function Login() {
     try {
       if (mode === "signup") {
         const { data, error: signUpError } = await authClient.signUp.email({
-          email: cleanEmail,
+          email: clean,
           password,
-          name: cleanEmail.split("@")[0] || "Você",
+          name: clean.split("@")[0] || "Você",
           fetchOptions,
         });
         if (signUpError) throw signUpError;
@@ -151,7 +168,7 @@ function Login() {
         if (!getBearerToken()) throw new Error("auth");
       } else {
         const { data, error: signInError } = await authClient.signIn.email({
-          email: cleanEmail,
+          email: clean,
           password,
           rememberMe: true,
           fetchOptions,
@@ -160,6 +177,7 @@ function Login() {
         if (data?.token) keepSignedIn(data.token);
         if (!getBearerToken()) throw new Error("auth");
       }
+      trackEvent("entrar");
       window.location.href = "/";
     } catch (err) {
       const failure = err && typeof err === "object" ? (err as { message?: string; status?: number; code?: string }) : null;
@@ -184,7 +202,7 @@ function Login() {
           <p className="mt-8 text-sm text-muted">Entrar está indisponível no momento.</p>
         ) : (
           <>
-            <form className="mt-8 flex flex-col gap-3" onSubmit={submit}>
+            <form className="mt-8 flex flex-col gap-3" noValidate onSubmit={submit}>
               <div className="login-field flex flex-col gap-1.5" style={{ animationDelay: "180ms" }}>
                 <Label htmlFor="email">E-mail</Label>
                 <div className="relative">
@@ -197,11 +215,16 @@ function Login() {
                     inputMode="email"
                     maxLength={254}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    aria-invalid={emailError ? true : undefined}
+                    aria-describedby={emailError ? "email-error" : undefined}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError("");
+                    }}
                     className="pl-10"
-                    required
                   />
                 </div>
+                <FieldError id="email-error">{emailError}</FieldError>
               </div>
               <div className="login-field flex flex-col gap-1.5" style={{ animationDelay: "240ms" }}>
                 <Label htmlFor="password">Senha</Label>
@@ -214,9 +237,13 @@ function Login() {
                     autoComplete={mode === "signup" ? "new-password" : "current-password"}
                     maxLength={128}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    aria-invalid={passwordError ? true : undefined}
+                    aria-describedby={passwordError ? "password-error" : undefined}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (passwordError) setPasswordError("");
+                    }}
                     className="px-10"
-                    required
                   />
                   <button
                     type="button"
@@ -227,13 +254,14 @@ function Login() {
                     {showPassword ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
                   </button>
                 </div>
+                <FieldError id="password-error">{passwordError}</FieldError>
               </div>
               {mode === "signin" ? (
                 <button type="button" className="inline-flex min-h-11 items-center self-end text-sm font-medium text-accent" onClick={() => setResetting(true)}>
                   Esqueci a senha
                 </button>
               ) : null}
-              {error ? <p className="text-xs text-danger">{error}</p> : null}
+              {error ? <p className="field-error text-xs text-danger" role="alert">{error}</p> : null}
               <Button type="submit" disabled={busy} className="login-field login-submit mt-1 h-12 w-full" style={{ animationDelay: "300ms" }}>
                 {busy ? "Aguarde…" : mode === "signin" ? "Entrar" : "Criar conta"}
               </Button>
@@ -276,6 +304,8 @@ function Login() {
                 onClick={() => {
                   setMode(mode === "signin" ? "signup" : "signin");
                   setError("");
+                  setEmailError("");
+                  setPasswordError("");
                 }}
               >
                 {mode === "signin" ? "Criar uma" : "Entrar"}

@@ -2,9 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
+import { categoryFromText, TASK_TONES, type TaskTone } from "@/lib/task-look";
 import { plainText } from "@/lib/text";
 
-export type TaskCategory = "trabalho" | "casa" | "estudo";
+export type TaskCategory = TaskTone;
 export type TaskPriority = "urgente" | "normal" | "depois";
 
 export type TaskRow = {
@@ -18,7 +19,7 @@ export type TaskRow = {
   sortOrder: number;
 };
 
-const CATEGORIES = ["trabalho", "casa", "estudo"] as const;
+const CATEGORIES = TASK_TONES;
 const PRIORITIES = ["urgente", "normal", "depois"] as const;
 
 const TASK_MAX = 80;
@@ -81,20 +82,17 @@ type DbTask = {
   sort_order: number;
 };
 
-function asCategory(value: string): TaskCategory {
-  return CATEGORIES.includes(value as TaskCategory) ? (value as TaskCategory) : "estudo";
-}
-
 function asPriority(value: string): TaskPriority {
   return PRIORITIES.includes(value as TaskPriority) ? (value as TaskPriority) : "normal";
 }
 
 function toRow(row: DbTask): TaskRow {
+  const text = plainText(row.text, TASK_MAX) || "Tarefa";
   return {
     id: row.id,
-    text: plainText(row.text, TASK_MAX) || row.text.slice(0, TASK_MAX),
+    text,
     done: Boolean(row.done),
-    category: asCategory(row.category),
+    category: categoryFromText(text),
     priority: asPriority(row.priority),
     dueAt: row.due_at,
     endsAt: row.ends_at,
@@ -148,7 +146,7 @@ export const addTask = createServerFn({ method: "POST" })
   .handler(async ({ context, data }): Promise<TaskRow> => {
     rateLimit(context.userId);
     const text = sanitizeTaskText(data.text);
-    const category = data.category ?? "estudo";
+    const category = categoryFromText(text);
     const priority = data.priority ?? "normal";
     const dueAt = parseDue(data.dueAt);
     const endsAt = parseDue(data.endsAt);
@@ -293,9 +291,11 @@ function parseImport(input: unknown) {
 
 function softDue(raw: string | null | undefined) {
   if (!raw) return null;
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
+  const day = raw.match(/(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (!day) return null;
+  const clock = raw.match(/(?:T|\s)(\d{2}:\d{2})/)?.[1];
+  if (clock && clock !== "12:00") return `${day}T${clock}:00.000Z`;
+  return `${day}T12:00:00.000Z`;
 }
 
 export const importTasks = createServerFn({ method: "POST" })
@@ -327,7 +327,7 @@ export const importTasks = createServerFn({ method: "POST" })
         insert into tasks (id, user_id, text, done, category, priority, due_at, ends_at, sort_order)
         values (
           ${id}, ${context.userId}, ${text}, ${item.done === true},
-          ${item.category ?? "estudo"}, ${item.priority ?? "normal"},
+          ${categoryFromText(text)}, ${item.priority ?? "normal"},
           ${softDue(item.dueAt)}, ${softDue(item.endsAt)}, ${item.sortOrder ?? imported}
         )
         on conflict (id) do nothing

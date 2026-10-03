@@ -62,7 +62,7 @@ export function CodeBoxes({
           onChange={(event) => write(index, event.target.value)}
           onKeyDown={(event) => onKey(index, event)}
           className={cn(
-            "h-14 min-w-0 flex-1 rounded-xl border bg-surface text-center text-xl font-medium outline-none",
+            "field-live h-14 min-w-0 flex-1 rounded-xl border bg-surface text-center text-xl font-medium outline-none",
             error ? "border-danger" : "border-border focus:border-accent",
           )}
         />

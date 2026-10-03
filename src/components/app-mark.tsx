@@ -4,7 +4,7 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { cn } from "@/lib/utils";
 
 const OPENED = "tarefas-opened";
-const LEAVE_MS = 380;
+const LEAVE_MS = 360;
 
 function seenThisSession() {
   try {
@@ -58,8 +58,8 @@ export function OpenSplash() {
     }
     setPhase("on");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const min = reduce ? 80 : 860;
-    const max = reduce ? 120 : 1100;
+    const min = reduce ? 80 : 640;
+    const max = reduce ? 120 : 860;
     const started = performance.now();
     let hideTimer = 0;
     let poll = 0;

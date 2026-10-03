@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
+import { plainText } from "@/lib/text";
 import { isThemeMode, type ThemeMode } from "@/lib/theme";
 
 export type UserPrefs = {
@@ -47,20 +48,15 @@ function writeFilters(prefs: Pick<UserPrefs, "notifyToday" | "notifyLate" | "not
 function rowToPrefs(row: Record<string, unknown> | undefined): UserPrefs {
   if (!row) return { ...DEFAULTS };
   return {
-    displayName: typeof row.display_name === "string" ? row.display_name : "",
+    displayName: plainText(typeof row.display_name === "string" ? row.display_name : "", 40),
     confirmDelete: asBool(row.confirm_delete, false),
     ...readFilters(row.notify_filters),
-        theme: isThemeMode(row.theme) ? row.theme : "system",
+    theme: isThemeMode(row.theme) ? row.theme : "system",
   };
 }
 
 function sanitizeName(raw: string) {
-  return raw
-    .replace(/[\u0000-\u001F\u007F]/g, "")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 40);
+  return plainText(raw, 40);
 }
 
 const Patch = z

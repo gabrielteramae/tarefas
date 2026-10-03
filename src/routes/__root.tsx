@@ -6,12 +6,13 @@ import { CookieConsent } from "@/components/cookie-consent";
 import { Toaster } from "@/components/ui/toaster";
 import { readSavedConsent } from "@/lib/consent";
 import { getPrefs } from "@/lib/prefs";
-import { applyTheme, readStoredTheme } from "@/lib/theme";
+import { applyTheme, readStoredTheme, themeRevision } from "@/lib/theme";
 import { keepSignedIn } from "@/lib/auth/client";
 import { peekOAuthAttempt, pullOAuthAttempt } from "@/lib/auth/oauth-attempt";
 import { NotFound } from "@/components/not-found";
 import { OpenSplash } from "@/components/app-mark";
-import { APP_DESCRIPTION, APP_NAME } from "@/lib/brand";
+import { APP_DESCRIPTION, APP_NAME, APP_SCHEMA, APP_TITLE, SITE_URL } from "@/lib/brand";
+import { SECURITY_HEADERS } from "../../server/security-policy.mjs";
 
 import appCss from "../styles.css?url";
 
@@ -26,14 +27,23 @@ export const Route = createRootRoute({
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
       { name: "apple-mobile-web-app-title", content: APP_NAME },
       { name: "format-detection", content: "telephone=no" },
-      { title: APP_NAME },
-      {
-        name: "description",
-        content: APP_DESCRIPTION,
-      },
+      { name: "robots", content: "index, follow" },
+      { title: APP_TITLE },
+      { name: "description", content: APP_DESCRIPTION },
+      { property: "og:title", content: APP_TITLE },
+      { property: "og:description", content: APP_DESCRIPTION },
+      { property: "og:type", content: "website" },
+      { property: "og:url", content: SITE_URL },
+      { property: "og:locale", content: "pt_BR" },
+      { property: "og:image", content: `${SITE_URL}/og.jpg` },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: APP_TITLE },
+      { name: "twitter:description", content: APP_DESCRIPTION },
+      { name: "twitter:image", content: `${SITE_URL}/og.jpg` },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+      { rel: "canonical", href: SITE_URL },
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
@@ -68,18 +78,31 @@ function ThirdPartyFonts() {
 
 function ViewportFrame() {
   useEffect(() => {
+    let frame = 0;
     const apply = () => {
-      const view = window.visualViewport;
-      const height = Math.round(view?.height ?? window.innerHeight);
-      document.documentElement.style.setProperty("--app-h", `${height}px`);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const view = window.visualViewport;
+        const layout = window.innerHeight;
+        const top = Math.round(view?.offsetTop ?? 0);
+        const height = Math.round(view?.height ?? layout);
+        const bottom = Math.max(0, Math.round(layout - top - height));
+        const root = document.documentElement;
+        root.style.setProperty("--app-h", `${height}px`);
+        root.style.setProperty("--app-top", `${top}px`);
+        root.style.setProperty("--app-bottom", `${bottom}px`);
+      });
     };
     apply();
     window.visualViewport?.addEventListener("resize", apply);
     window.visualViewport?.addEventListener("scroll", apply);
+    window.addEventListener("resize", apply);
     window.addEventListener("orientationchange", apply);
     return () => {
+      cancelAnimationFrame(frame);
       window.visualViewport?.removeEventListener("resize", apply);
       window.visualViewport?.removeEventListener("scroll", apply);
+      window.removeEventListener("resize", apply);
       window.removeEventListener("orientationchange", apply);
     };
   }, []);
@@ -89,8 +112,12 @@ function ViewportFrame() {
 function ThemeSync() {
   useLayoutEffect(() => {
     applyTheme(readStoredTheme());
+    const seen = themeRevision();
     void getPrefs()
-      .then((prefs) => applyTheme(prefs.theme))
+      .then((prefs) => {
+        if (themeRevision() !== seen) return;
+        applyTheme(prefs.theme);
+      })
       .catch(() => undefined);
   }, []);
   return null;
@@ -148,6 +175,7 @@ function Root() {
   return (
     <html lang="pt-BR" data-theme="dark" suppressHydrationWarning>
       <head>
+        <meta httpEquiv="Content-Security-Policy" content={SECURITY_HEADERS["Content-Security-Policy"]} />
         <meta name="color-scheme" content="dark light" />
         <meta name="theme-color" content="#09090b" />
         <script
@@ -163,12 +191,19 @@ function Root() {
           }}
         />
         <HeadContent />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: APP_SCHEMA }} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){try{var path=location.pathname.replace(/\\/+$/,"")||"/";var robots=document.querySelector(\'meta[name="robots"]\');if(!robots){robots=document.createElement("meta");robots.setAttribute("name","robots");document.head.appendChild(robots)}if(path==="/login"||path.indexOf("/api/")===0||path.indexOf("/auth/")===0){robots.setAttribute("content","noindex, nofollow");return}robots.setAttribute("content","index, follow");var link=document.querySelector(\'link[rel="canonical"]\');if(!link){link=document.createElement("link");link.rel="canonical";document.head.appendChild(link)}link.href="https://www.tarefas.com.br"+path;var image="https://www.tarefas.com.br/og.jpg";["og:url","og:image","twitter:image"].forEach(function(key){var meta=document.querySelector(\'meta[property="\'+key+\'"]\')||document.querySelector(\'meta[name="\'+key+\'"]\');if(!meta)return;if(key==="og:url")meta.setAttribute("content","https://www.tarefas.com.br"+path);else meta.setAttribute("content",image)})}catch(e){}})();',
+          }}
+        />
       </head>
       <body>
         <noscript
           dangerouslySetInnerHTML={{
             __html:
-              '<div style="min-height:100dvh;display:grid;place-items:center;padding:2rem;text-align:center;font-family:system-ui,sans-serif"><p style="font-size:1.5rem;font-weight:600;margin:0">Tarefas</p><p style="margin-top:0.75rem">Ative o JavaScript para abrir a lista.</p></div>',
+              '<div style="min-height:100dvh;display:grid;place-items:center;padding:2rem;text-align:center;font-family:system-ui,sans-serif"><h1 style="font-size:1.5rem;font-weight:600;margin:0">Tarefas</h1><p style="margin-top:0.75rem;max-width:28rem">Organize o que precisa ser feito hoje. Lista pessoal, com dia marcado, agenda e o que já foi concluído.</p><p style="margin-top:0.75rem">Ative o JavaScript para abrir a lista.</p></div>',
           }}
         />
         <ThemeSync />

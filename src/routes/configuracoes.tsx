@@ -4,7 +4,7 @@ import { AuthScreen, SettingGroup, SettingRow } from "@/components/auth-screen";
 import { MfaSetting } from "@/components/mfa-setting";
 import { Switch } from "@/components/ui/switch";
 import { getPrefs, updatePrefs, type UserPrefs } from "@/lib/prefs";
-import { applyTheme } from "@/lib/theme";
+import { applyTheme, themeRevision } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/configuracoes")({ component: Configuracoes });
@@ -13,8 +13,11 @@ function Configuracoes() {
   const [prefs, setPrefs] = useState<UserPrefs | null>(null);
 
   useEffect(() => {
+    const seen = themeRevision();
     void getPrefs()
-      .then(setPrefs)
+      .then((prefs) => {
+        setPrefs((current) => (themeRevision() !== seen && current ? { ...prefs, theme: current.theme } : prefs));
+      })
       .catch(() => undefined);
   }, []);
 

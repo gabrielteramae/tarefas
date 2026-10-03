@@ -37,6 +37,22 @@ function persistThemeAllowed() {
 
 let media: MediaQueryList | null = null;
 let onMedia: (() => void) | null = null;
+let revision = 0;
+
+export function themeRevision() {
+  return revision;
+}
+
+function paintNow(paint: () => void) {
+  const style = document.createElement("style");
+  style.textContent = "*,*::before,*::after{transition:none!important}";
+  document.head.appendChild(style);
+  paint();
+  void document.documentElement.offsetHeight;
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => style.remove());
+  });
+}
 
 function watchSystem(choice: ThemeMode) {
   if (onMedia && media) media.removeEventListener("change", onMedia);
@@ -50,20 +66,18 @@ function watchSystem(choice: ThemeMode) {
 
 export function applyTheme(choice: ThemeMode) {
   if (typeof document === "undefined") return;
+  revision += 1;
   const theme = resolveTheme(choice);
   const root = document.documentElement;
-  const previous = root.dataset.theme;
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (previous && previous !== theme && !reduce) {
-    root.classList.add("theme-swap");
-    void root.offsetHeight;
-    window.setTimeout(() => root.classList.remove("theme-swap"), 380);
-  }
-  root.dataset.theme = theme;
-  root.style.colorScheme = theme;
-  const bar = theme === "light" ? "#f6f3ee" : "#09090b";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bar);
-  document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", theme);
+  const changed = root.dataset.theme !== theme;
+  const paint = () => {
+    root.dataset.theme = theme;
+    root.style.colorScheme = theme;
+    const bar = theme === "light" ? "#f6f3ee" : "#09090b";
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bar);
+  };
+  if (changed) paintNow(paint);
+  else paint();
   try {
     if (persistThemeAllowed()) {
       localStorage.setItem(THEME_STORAGE_KEY, choice);

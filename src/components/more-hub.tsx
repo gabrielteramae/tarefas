@@ -19,7 +19,7 @@ import { authEnabled, signOut } from "@/lib/auth/client";
 import { hasGateSessionMarker } from "@/lib/auth/gate-session-marker";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { getPrefs, updatePrefs } from "@/lib/prefs";
-import { applyTheme, readStoredTheme, type ThemeMode } from "@/lib/theme";
+import { applyTheme, readStoredTheme, themeRevision, type ThemeMode } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -73,10 +73,12 @@ export function MoreHub() {
 
   useEffect(() => {
     setTheme(readStoredTheme());
+    const seen = themeRevision();
     void getPrefs()
       .then((prefs) => {
-        setTheme(prefs.theme);
         setConfirmDelete(prefs.confirmDelete);
+        if (themeRevision() !== seen) return;
+        setTheme(prefs.theme);
       })
       .catch(() => undefined);
   }, []);
@@ -90,7 +92,7 @@ export function MoreHub() {
   const showTheme = hit(q, "aparência tema escuro claro");
   const showNotify = hit(q, "notificações avisos");
   const showConfirm = hit(q, "confirmar ao apagar");
-  const showData = hit(q, "dados salvos");
+  const showData = hit(q, "dados salvos exportar importar backup");
   const showAccounts = hit(q, "contas ligadas google");
   const showSecurity = hit(q, "segurança verificação configurações");
   const showHelp = hit(q, "ajuda");
@@ -127,11 +129,13 @@ export function MoreHub() {
   };
 
   return (
-    <div className="tab-pane pb-28">
+    <div className="tab-pane pb-4">
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" aria-hidden="true" />
         <Input
           value={query}
+          maxLength={80}
+          enterKeyHint="search"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Buscar ajustes"
           aria-label="Buscar ajustes"
@@ -142,7 +146,7 @@ export function MoreHub() {
       {showProfile ? (
         <Link to="/perfil" className="mt-5 flex min-h-16 items-center gap-3 rounded-2xl bg-surface px-4 py-3 tap-target">
           {user?.profileImageUrl ? (
-            <img src={user.profileImageUrl} alt="" className="size-11 rounded-full object-cover" />
+            <img src={user.profileImageUrl} alt="" width={44} height={44} decoding="async" className="size-11 rounded-full object-cover" />
           ) : (
             <span className="grid size-11 place-items-center rounded-full bg-surface-2 text-base font-semibold text-accent">
               {initial}
@@ -198,7 +202,7 @@ export function MoreHub() {
       </Group>
 
       <Group title="Conta" show={showData || showAccounts || showSecurity}>
-        {showData ? <RowLink to="/dados" icon={Database} label="Dados salvos" /> : null}
+        {showData ? <RowLink to="/dados" icon={Database} label="Dados salvos" hint="Exportar e importar" /> : null}
         {showAccounts ? <RowLink to="/oauth" icon={Link2} label="Contas ligadas" /> : null}
         {showSecurity ? <RowLink to="/configuracoes" icon={Shield} label="Segurança" hint="Verificação em duas etapas" /> : null}
       </Group>

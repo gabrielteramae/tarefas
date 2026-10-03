@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { AuthScreen, SettingGroup, SettingRow } from "@/components/auth-screen";
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/field-error";
 import { Input } from "@/components/ui/input";
+import { nameProblem } from "@/lib/form";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { getPrefs, updatePrefs } from "@/lib/prefs";
 
@@ -12,6 +14,7 @@ function Perfil() {
   const user = useCurrentUser();
   const [name, setName] = useState("");
   const [saved, setSaved] = useState("");
+  const [nameError, setNameError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -23,6 +26,12 @@ function Perfil() {
   const initial = (name || user?.primaryEmail || "D").trim().charAt(0).toUpperCase();
 
   const save = async () => {
+    const problem = nameProblem(name);
+    setNameError(problem);
+    if (problem) {
+      setSaved("");
+      return;
+    }
     setBusy(true);
     setSaved("");
     try {
@@ -43,6 +52,9 @@ function Perfil() {
           <img
             src={user.profileImageUrl}
             alt=""
+            width={80}
+            height={80}
+            decoding="async"
             className="size-20 rounded-full object-cover outline outline-1 -outline-offset-1 outline-fg/10"
           />
         ) : (
@@ -53,25 +65,43 @@ function Perfil() {
         <p className="text-sm text-muted">{user?.primaryEmail ?? "Sua conta"}</p>
       </div>
 
-      <SettingGroup>
-        <div className="px-4 py-3">
-          <label className="text-xs text-subtle">Nome</label>
-          <Input
-            value={name}
-            maxLength={40}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Seu nome"
-            className="mt-2"
-          />
-        </div>
-        <SettingRow title="E-mail">
-          <span className="max-w-[45%] truncate text-xs text-muted">{user?.primaryEmail ?? "—"}</span>
-        </SettingRow>
-      </SettingGroup>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <SettingGroup>
+          <div className="px-4 py-3">
+            <label className="text-xs text-subtle" htmlFor="perfil-nome">
+              Nome
+            </label>
+            <Input
+              id="perfil-nome"
+              value={name}
+              maxLength={40}
+              enterKeyHint="done"
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "perfil-nome-error" : undefined}
+              onChange={(e) => {
+                setName(e.target.value.slice(0, 40));
+                if (nameError) setNameError("");
+              }}
+              placeholder="Seu nome"
+              autoComplete="nickname"
+              className="mt-2"
+            />
+            <FieldError id="perfil-nome-error">{nameError}</FieldError>
+          </div>
+          <SettingRow title="E-mail">
+            <span className="max-w-[45%] truncate text-xs text-muted">{user?.primaryEmail ?? "—"}</span>
+          </SettingRow>
+        </SettingGroup>
 
-      <Button className="mt-6 w-full" disabled={busy} onClick={() => void save()}>
-        {busy ? "Salvando…" : "Salvar"}
-      </Button>
+        <Button type="submit" className="mt-6 w-full" disabled={busy}>
+          {busy ? "Salvando…" : "Salvar"}
+        </Button>
+      </form>
       {saved ? <p className="mt-3 text-center text-xs text-muted">{saved}</p> : null}
     </AuthScreen>
   );

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { getBearerToken, signOut } from "@/lib/auth/client";
 import { CodeBoxes } from "@/components/code-boxes";
+import { FieldError } from "@/components/field-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -26,7 +27,17 @@ export function MfaPrompt({ onOk }: { onOk: () => void }) {
   const [busy, setBusy] = useState(false);
 
   const submit = async (value = reserve ? backup : digits.join("")) => {
-    if (busy || (reserve ? value.replace(/[^A-Za-z0-9]/g, "").length < 8 : value.length !== 6)) return;
+    if (busy) return;
+    const compact = value.replace(/[^A-Za-z0-9]/g, "");
+    if (reserve) {
+      if (compact.length < 8) {
+        setError("O código reserva tem 8 caracteres.");
+        return;
+      }
+    } else if (value.length !== 6) {
+      setError("Digite os 6 números.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -75,8 +86,8 @@ export function MfaPrompt({ onOk }: { onOk: () => void }) {
             />
           )}
         </div>
-        {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
-        <Button className="mt-6 h-12 w-full" disabled={busy || (reserve ? backup.replace(/[^A-Za-z0-9]/g, "").length < 8 : digits.join("").length < 6)} onClick={() => void submit()}>
+        {error ? <FieldError id="mfa-error">{error}</FieldError> : null}
+        <Button className="mt-6 h-12 w-full" disabled={busy} onClick={() => void submit()}>
           {busy ? "Conferindo…" : "Continuar"}
         </Button>
         <button

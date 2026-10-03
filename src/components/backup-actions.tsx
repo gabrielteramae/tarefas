@@ -35,6 +35,14 @@ export function BackupActions({ onImported }: { onImported?: () => void }) {
     setBusy(true);
     setStatus("");
     try {
+      if (!file.name.toLowerCase().endsWith(".json") && file.type !== "application/json") {
+        setStatus("Use um arquivo .json exportado pelo app.");
+        return;
+      }
+      if (file.size === 0) {
+        setStatus("O arquivo está vazio.");
+        return;
+      }
       if (file.size > 200_000) {
         setStatus("Arquivo grande demais.");
         return;

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Check, CalendarDays, GripVertical, Trash2 } from "lucide-react";
+import { CalendarDays, Circle, CircleAlert, CircleCheck, GripVertical, ListTodo, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { downloadPhoneCalendar, googleAgendaUrl, phoneCalendarHref } from "@/lib/agenda";
@@ -28,17 +28,15 @@ function detail(task: TaskRow) {
   return [flag, range].filter(Boolean).join(" · ");
 }
 
-function isOverdue(task: TaskRow) {
+function isOverdue(task: TaskRow, today: string) {
   const day = calendarDay(task.endsAt ?? task.dueAt);
-  if (!day || task.done) return false;
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const date = String(now.getDate()).padStart(2, "0");
-  return day < `${now.getFullYear()}-${month}-${date}`;
+  if (!day || task.done || !today) return false;
+  return day < today;
 }
 
 type Props = {
   task: TaskRow;
+  today: string;
   openList: boolean;
   reorder: boolean;
   dragging: boolean;
@@ -46,9 +44,27 @@ type Props = {
   actions: TaskActions;
 };
 
-function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: Props) {
+function TaskIcon() {
+  return (
+    <span className="task-mark is-estudo shrink-0" aria-hidden="true">
+      <ListTodo className="size-4" strokeWidth={2.2} />
+    </span>
+  );
+}
+
+export function TaskGlyph() {
+  return <TaskIcon />;
+}
+
+function StatusMark({ done, late }: { done: boolean; late: boolean }) {
+  if (done) return <CircleCheck className="size-6 text-accent" strokeWidth={2.2} aria-hidden="true" />;
+  if (late) return <CircleAlert className="size-6 text-danger" strokeWidth={2.2} aria-hidden="true" />;
+  return <Circle className="size-6 text-subtle" strokeWidth={2} aria-hidden="true" />;
+}
+
+function TaskCardView({ task, today, openList, reorder, dragging, expanded, actions }: Props) {
   const tap = useTapAction();
-  const late = isOverdue(task);
+  const late = isOverdue(task, today);
   const editable = openList && !task.done;
   const note = detail(task);
   const google = safeHref(googleAgendaUrl(task));
@@ -83,25 +99,20 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
             <GripVertical className="size-4" aria-hidden="true" />
           </button>
         ) : null}
+        <TaskIcon />
+        <div className="min-w-0 flex-1 py-2">
+          <p className={cn("truncate text-sm leading-snug transition-colors duration-150", task.done && "text-subtle line-through")}>{task.text}</p>
+          {note ? <p className={cn("truncate text-xs", late ? "text-danger" : "text-subtle")}>{note}</p> : null}
+        </div>
         <button
           type="button"
           {...tap(`done-${task.id}`, () => actions.toggle(task.id))}
           aria-label={task.done ? `Desmarcar ${task.text}` : `Concluir ${task.text}`}
+          aria-pressed={task.done}
           className="tap-target grid size-11 shrink-0 place-items-center"
         >
-          <span
-            className={cn(
-              "flex size-6 items-center justify-center rounded-md border",
-              task.done ? "border-accent bg-accent text-accent-fg" : "border-border text-transparent",
-            )}
-          >
-            <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
-          </span>
+          <StatusMark done={task.done} late={late} />
         </button>
-        <div className="min-w-0 flex-1 py-2">
-          <p className={cn("truncate text-sm leading-snug", task.done && "text-subtle line-through")}>{task.text}</p>
-          {note ? <p className={cn("truncate text-xs", late ? "text-danger" : "text-subtle")}>{note}</p> : null}
-        </div>
         {editable ? (
           <button
             type="button"
@@ -126,7 +137,7 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
         </Button>
       </div>
       {editable && expanded ? (
-        <div className="grid gap-3 px-1 pb-2">
+        <div className="sheet-in grid gap-3 px-1 pb-2">
           <label className="grid gap-1.5 text-xs text-subtle">
             De
             <input
@@ -199,6 +210,7 @@ function TaskCardView({ task, openList, reorder, dragging, expanded, actions }: 
 export const TaskCard = memo(TaskCardView, (prev, next) => {
   return (
     prev.task === next.task &&
+    prev.today === next.today &&
     prev.openList === next.openList &&
     prev.reorder === next.reorder &&
     prev.dragging === next.dragging &&

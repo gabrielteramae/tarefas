@@ -50,7 +50,7 @@ function publish(value: Consent) {
 
 const CATEGORIES: Array<{ key: keyof Consent; title: string; hint: string }> = [
   { key: "preferences", title: "Preferências", hint: "Tema claro ou escuro neste aparelho." },
-  { key: "analytics", title: "Análise", hint: "Não usamos hoje." },
+  { key: "analytics", title: "Análise", hint: "Conta tarefas criadas, concluídas e entradas neste aparelho. Sem anúncio." },
   { key: "marketing", title: "Marketing", hint: "Não usamos hoje." },
   { key: "thirdParty", title: "Terceiros", hint: "Fonte do Google. O login fica no site deles." },
 ];
@@ -111,8 +111,8 @@ export function CookieConsent() {
       aria-labelledby="cookie-banner-title"
       className={
         aboveDock
-          ? "cookie-banner fixed inset-x-3 z-50 mx-auto max-w-lg rounded-2xl border border-border bg-surface p-4 shadow-[0_12px_40px_rgba(0,0,0,0.45)] bottom-[calc(5.75rem+env(safe-area-inset-bottom))]"
-          : "cookie-banner fixed inset-x-3 z-50 mx-auto max-w-lg rounded-2xl border border-border bg-surface p-4 shadow-[0_12px_40px_rgba(0,0,0,0.45)] bottom-[max(0.75rem,env(safe-area-inset-bottom))]"
+          ? "cookie-banner is-dock fixed inset-x-3 z-50 mx-auto max-w-lg rounded-2xl border border-border bg-surface p-4 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+          : "cookie-banner is-page fixed inset-x-3 z-50 mx-auto max-w-lg rounded-2xl border border-border bg-surface p-4 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
       }
     >
       <p id="cookie-banner-title" className="text-sm font-medium text-fg">

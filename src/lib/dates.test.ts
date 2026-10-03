@@ -1,8 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { googleAgendaUrl, icsFor } from "./agenda.ts";
-import { calendarDay, clockOf, formatRange, noonUtc, spanDays, withClock } from "./dates.ts";
+import { calendarDay, clockOf, dayGreeting, formatRange, nextGreetingChange, noonUtc, spanDays, withClock } from "./dates.ts";
+import { localDay } from "./notify.ts";
 
+test("o cumprimento segue o horário local", () => {
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 0, 30)), "Boa noite!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 5, 59)), "Boa noite!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 6, 0)), "Bom dia!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 11, 59)), "Bom dia!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 12, 0)), "Boa tarde!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 17, 59)), "Boa tarde!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 18, 0)), "Boa noite!");
+  assert.equal(dayGreeting(new Date(2026, 8, 29, 23, 30)), "Boa noite!");
+});
+
+test("o relógio acorda na virada da noite, da manhã e do dia", () => {
+  const night = nextGreetingChange(new Date(2026, 8, 29, 5, 10));
+  assert.equal(night.getHours(), 6);
+  assert.equal(night.getDate(), 29);
+  const evening = nextGreetingChange(new Date(2026, 8, 29, 18, 5));
+  assert.equal(evening.getDate(), 30);
+  assert.equal(evening.getHours(), 0);
+  const afternoon = nextGreetingChange(new Date(2026, 8, 29, 17, 0));
+  assert.equal(afternoon.getHours(), 18);
+  assert.equal(afternoon.getDate(), 29);
+});
+test("meia-noite usa o dia do relógio, não o UTC", () => {
+  const justAfter = new Date(2026, 8, 29, 0, 1, 0);
+  const local = `${justAfter.getFullYear()}-${String(justAfter.getMonth() + 1).padStart(2, "0")}-${String(justAfter.getDate()).padStart(2, "0")}`;
+  assert.equal(localDay(justAfter), "2026-09-29");
+  assert.equal(localDay(justAfter), local);
+  const utc = justAfter.toISOString().slice(0, 10);
+  if (utc !== local) assert.notEqual(localDay(justAfter), utc);
+});
 test("o dia escolhido não recua por causa do fuso", () => {
   const stored = noonUtc("2026-10-02");
   assert.equal(calendarDay(stored), "2026-10-02");

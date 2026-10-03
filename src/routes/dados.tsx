@@ -84,6 +84,9 @@ function Dados() {
       <Button className="mt-6 w-full" disabled={busy} onClick={() => void load()}>
         {busy ? "Atualizando…" : "Atualizar"}
       </Button>
+      <p className="mt-4 text-center text-xs text-subtle">
+        A lista fica na sua conta, não neste navegador. Exportar guarda uma cópia.
+      </p>
       <div className="mt-3">
         <BackupActions onImported={() => void load()} />
       </div>

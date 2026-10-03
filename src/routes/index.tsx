@@ -1,17 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CircleCheck, ListChecks, Plus, Undo2 } from "lucide-react";
 import { toast } from "sonner";
+import { GreetingSnap } from "@/components/greeting-snap";
+import { FieldError } from "@/components/field-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DockNav, type DockTab } from "@/components/dock-nav";
+import { readDockTab, writeDockTab, type DockTab as SavedTab } from "@/lib/dock-tab";
 import { PhoneScroll } from "@/components/phone-scroll";
-import { TaskCard, type TaskActions } from "@/components/task-card";
+import { TaskCard, TaskGlyph, type TaskActions } from "@/components/task-card";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import {
   addTask,
-  getStreak,
   listTasks,
   recordClear,
   removeTask,
@@ -25,8 +27,11 @@ import { notifyDone, notifyDue, localDay } from "@/lib/notify";
 import { MoreHub } from "@/components/more-hub";
 import { cn } from "@/lib/utils";
 import { useTapAction } from "@/lib/use-tap-action";
-import { calendarDay, clockOf, spanDays, withClock } from "@/lib/dates";
+import { calendarDay, clockOf, dayGreeting, nextGreetingChange, spanDays, withClock } from "@/lib/dates";
 import { plainText } from "@/lib/text";
+import { categoryFromText } from "@/lib/task-look";
+import { taskProblem } from "@/lib/form";
+import { trackEvent } from "@/lib/events";
 import { publishTasksChanged, subscribeTasksChanged } from "@/lib/tab-sync";
 
 function isUnauthorized(err: unknown) {
@@ -64,6 +69,13 @@ function Agenda({
   const todayKey = isoDay(today);
   const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selected, setSelected] = useState(todayKey);
+  const seenDay = useRef(todayKey);
+  useEffect(() => {
+    if (seenDay.current === todayKey) return;
+    const previous = seenDay.current;
+    seenDay.current = todayKey;
+    setSelected((current) => (current === previous ? todayKey : current));
+  }, [todayKey]);
   const week = ["2ª", "3ª", "4ª", "5ª", "6ª", "sá", "do"];
   const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const pad = (first.getDay() + 6) % 7;
@@ -79,7 +91,7 @@ function Agenda({
   const tap = useTapAction();
 
   return (
-      <div className="tab-pane flex flex-col gap-5 pb-28">
+      <div className="tab-pane flex flex-col gap-5 pb-4">
       <section className="rounded-3xl bg-surface px-4 py-4 shadow-card">
         <div className="mb-5 flex items-center justify-between gap-3">
           <button type="button" className="tap-target grid size-11 place-items-center rounded-full text-muted" {...tap("prev-month", () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1)))} aria-label="Mês anterior">
@@ -137,8 +149,9 @@ function Agenda({
         ) : (
           <ul className="flex flex-col gap-2">
             {selectedTasks.map((task) => (
-              <li key={task.id} className="truncate rounded-2xl border border-border bg-surface px-4 py-3 text-sm">
-                {task.text}
+              <li key={task.id} className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-3 py-2.5 text-sm">
+                <TaskGlyph />
+                <span className={cn("min-w-0 flex-1 truncate", task.done && "text-subtle line-through")}>{task.text}</span>
               </li>
             ))}
           </ul>
@@ -155,18 +168,32 @@ function Agenda({
   );
 }
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+  validateSearch: (search: Record<string, unknown>): { aba?: Exclude<SavedTab, "tarefas"> } => {
+    const value = typeof search.aba === "string" ? search.aba : "";
+    if (value === "hoje" || value === "feitas" || value === "mais") return { aba: value };
+    return {};
+  },
+  component: Home,
+});
 
 function Home() {
   const { user, isPending } = useCurrentUserState();
-  if (isPending) {
-    return (
-      <main className="app-frame grid place-items-center text-muted" aria-busy="true">
-        <p className="text-sm">Abrindo…</p>
-      </main>
-    );
+  const seenUser = useRef(false);
+  if (user) seenUser.current = true;
+  if (!seenUser.current) {
+    if (isPending) {
+      return (
+        <main className="app-frame grid place-items-center text-muted" aria-busy="true">
+          <div className="load-ring" role="presentation" />
+          <p className="sr-only">Abrindo</p>
+        </main>
+      );
+    }
+    if (!user) return <RedirectToSignIn />;
+  } else if (!user && !isPending) {
+    return <RedirectToSignIn />;
   }
-  if (!user) return <RedirectToSignIn />;
   return <TaskBoard />;
 }
 
@@ -174,15 +201,40 @@ function TaskBoard() {
   const [tasks, setTasks] = useState<TaskRow[]>([]);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [draftError, setDraftError] = useState("");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [tab, setTab] = useState<DockTab>("tarefas");
-  const [streak, setStreak] = useState(0);
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const [tab, setTabState] = useState<DockTab>(search.aba ?? "tarefas");
+  const setTab = useCallback(
+    (next: DockTab) => {
+      writeDockTab(next);
+      setTabState(next);
+      void navigate({
+        to: "/",
+        search: next === "tarefas" ? {} : { aba: next },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+  useLayoutEffect(() => {
+    if (search.aba) {
+      writeDockTab(search.aba);
+      setTabState(search.aba);
+      return;
+    }
+    const stored = readDockTab();
+    setTabState(stored);
+    if (stored !== "tarefas") {
+      void navigate({ to: "/", search: { aba: stored }, replace: true });
+    }
+  }, [navigate, search.aba]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [live, setLive] = useState("");
-  const [clock, setClock] = useState(() => new Date());
+  const [clock, setClock] = useState<Date | null>(() => (typeof window === "undefined" ? null : new Date()));
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
   const orderRef = useRef<string[] | null>(null);
@@ -195,6 +247,7 @@ function TaskBoard() {
   const loadedRef = useRef<TaskRow[] | null>(null);
   const addingRef = useRef(false);
   const recentAdd = useRef({ text: "", at: 0 });
+  const lastToggle = useRef(new Map<string, number>());
   const inflight = useRef(0);
   const pendingDeletes = useRef(new Map<string, { task: TaskRow; index: number; timer: number }>());
   const tabRef = useRef(tab);
@@ -239,25 +292,20 @@ function TaskBoard() {
         ping();
       })
       .catch(() => undefined);
-    void getStreak()
-      .then((row) => {
-        if (!cancelled) setStreak(row.streak);
-      })
-      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    let timer = 0;
     const arm = () => {
       const now = new Date();
       setClock(now);
-      const next = new Date(now);
-      next.setHours(24, 0, 2, 0);
-      return window.setTimeout(arm, Math.max(1000, next.getTime() - now.getTime()));
+      const next = nextGreetingChange(now);
+      timer = window.setTimeout(arm, Math.max(1000, next.getTime() - now.getTime()));
     };
-    const timer = arm();
+    arm();
     const onVis = () => {
       if (document.visibilityState === "visible") setClock(new Date());
     };
@@ -323,28 +371,38 @@ function TaskBoard() {
 
   const focusComposer = (event: { currentTarget: HTMLInputElement }) => {
     const el = event.currentTarget;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    window.setTimeout(() => {
-      el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
-    }, 280);
+    const scroll = () => el.scrollIntoView({ block: "center", behavior: "auto" });
+    scroll();
+    const view = window.visualViewport;
+    if (!view) return;
+    const onResize = () => {
+      scroll();
+      view.removeEventListener("resize", onResize);
+    };
+    view.addEventListener("resize", onResize);
+    window.setTimeout(() => view.removeEventListener("resize", onResize), 600);
   };
 
   const add = async () => {
     if (addingRef.current) return;
+    const problem = taskProblem(draft);
+    if (problem) {
+      setDraftError(problem);
+      return;
+    }
     const text = plainText(draft, 80);
-    if (!text) return;
+    setDraftError("");
     const now = Date.now();
-    if (recentAdd.current.text === text && now - recentAdd.current.at < 900) return;
+    if (recentAdd.current.text === text && now - recentAdd.current.at < 400) return;
     addingRef.current = true;
     recentAdd.current = { text, at: now };
-    setAdding(true);
     setDraft("");
     const id = crypto.randomUUID();
     const temp: TaskRow = {
       id,
       text,
       done: false,
-      category: "estudo",
+      category: categoryFromText(text),
       priority: "normal",
       dueAt: null,
       endsAt: null,
@@ -352,6 +410,7 @@ function TaskBoard() {
     };
     tasksRef.current = [temp, ...tasksRef.current];
     commit(tasksRef.current);
+    addingRef.current = false;
     inflight.current += 1;
     chain(id, async () => {
       try {
@@ -363,6 +422,7 @@ function TaskBoard() {
         if (saved.id !== id) commit(tasksRef.current.filter((task) => task.id !== id));
         else commit(tasksRef.current.map((task) => (task.id === id ? { ...task, text: saved.text } : task)));
         publishTasksChanged();
+        trackEvent("tarefa_criada");
         setLive(`Adicionada: ${saved.text}`);
       } catch (err) {
         if (isUnauthorized(err)) return;
@@ -371,18 +431,20 @@ function TaskBoard() {
         setDraft(text);
       } finally {
         inflight.current -= 1;
-        addingRef.current = false;
-        setAdding(false);
       }
     });
   };
 
   const toggle = async (id: string) => {
+    const now = Date.now();
+    if (now - (lastToggle.current.get(id) ?? 0) < 140) return;
+    lastToggle.current.set(id, now);
     const current = tasksRef.current.find((task) => task.id === id);
     const willDone = !current?.done;
     const next = tasksRef.current.map((task) => (task.id === id ? { ...task, done: !task.done } : task));
     commit(next);
     if (current) setLive(willDone ? `Concluída: ${current.text}` : `Reaberta: ${current.text}`);
+    if (willDone) trackEvent("tarefa_concluida");
     if (willDone && filtersRef.current.done && current) notifyDone(id, current.text);
     inflight.current += 1;
     chain(id, async () => {
@@ -392,8 +454,7 @@ function TaskBoard() {
         let row = await toggleTask({ data: { id } });
         if (row.done !== desired) row = await toggleTask({ data: { id } });
         if (desired && tasksRef.current.every((task) => task.done)) {
-          const cleared = await recordClear({ data: { day: localDay() } }).catch(() => null);
-          if (cleared) setStreak(cleared.streak);
+          await recordClear({ data: { day: localDay() } }).catch(() => null);
         }
         publishTasksChanged();
       } catch (err) {
@@ -418,6 +479,46 @@ function TaskBoard() {
     setLive(`Restaurada: ${pending.task.text}`);
   };
 
+  const showUndo = () => {
+    const count = pendingDeletes.current.size;
+    if (count === 0) {
+      toast.dismiss("undo-tasks");
+      return;
+    }
+    toast(count === 1 ? "Tarefa apagada" : `${count} tarefas apagadas`, {
+      id: "undo-tasks",
+      duration: 5000,
+      className: "undo-toast",
+      style: {
+        background: "#141416",
+        color: "#f4f4f5",
+        border: "1px solid #2a2a2e",
+        borderRadius: "16px",
+      },
+      actionButtonStyle: {
+        background: "#27272a",
+        color: "#f4f4f5",
+        width: "44px",
+        height: "44px",
+        minWidth: "44px",
+        borderRadius: "999px",
+        padding: 0,
+      },
+      action: {
+        label: (
+          <>
+            <Undo2 className="size-5" strokeWidth={2.2} aria-hidden="true" />
+            <span className="sr-only">Desfazer</span>
+          </>
+        ),
+        onClick: () => {
+          const ids = [...pendingDeletes.current.keys()].reverse();
+          for (const id of ids) restore(id);
+        },
+      },
+    });
+  };
+
   const remove = (id: string) => {
     const snapshot = tasksRef.current;
     const index = snapshot.findIndex((task) => task.id === id);
@@ -425,9 +526,9 @@ function TaskBoard() {
     if (!task || pendingDeletes.current.has(id)) return;
     if (confirmDelete && !window.confirm("Apagar esta tarefa?")) return;
     commit(snapshot.filter((item) => item.id !== id));
-    setLive(`Apagada: ${task.text}. Dá para desfazer.`);
     const timer = window.setTimeout(() => {
       pendingDeletes.current.delete(id);
+      showUndo();
       inflight.current += 1;
       chain(id, async () => {
         try {
@@ -448,10 +549,8 @@ function TaskBoard() {
       });
     }, 5000);
     pendingDeletes.current.set(id, { task, index, timer });
-    toast("Tarefa apagada", {
-      duration: 5000,
-      action: { label: "Desfazer", onClick: () => restore(id) },
-    });
+    setLive(pendingDeletes.current.size === 1 ? `Apagada: ${task.text}. Dá para desfazer.` : `${pendingDeletes.current.size} tarefas apagadas. Dá para desfazer.`);
+    showUndo();
   };
 
   const refreshRows = () => {
@@ -631,21 +730,32 @@ function TaskBoard() {
     return { open, days: [...byDay.keys()].sort(), byDay };
   }, [tasks]);
 
-  const today = clock;
-  const parts = todayParts(today);
-  const openLabel = stats.open === 0 ? "Nada para fazer" : stats.open === 1 ? "1 para fazer" : `${stats.open} para fazer`;
+  const tabOrder = ["tarefas", "hoje", "feitas", "mais"] as const;
+  const prevTab = useRef(tab);
+  const tabDir = useRef<"forward" | "back">("forward");
+  const tabMoved = useRef(false);
+  if (prevTab.current !== tab) {
+    tabDir.current = tabOrder.indexOf(tab) < tabOrder.indexOf(prevTab.current) ? "back" : "forward";
+    prevTab.current = tab;
+    tabMoved.current = true;
+  }
+  const tabMotion = !tabMoved.current ? "is-still" : tabDir.current === "back" ? "is-back" : "is-forward";
+  const parts = clock ? todayParts(clock) : null;
+  const greeting = dayGreeting(clock ?? new Date());
 
   return (
     <main className="app-frame text-fg">
+      {ready ? null : <div className="load-bar" role="progressbar" aria-label="Carregando tarefas" />}
       <div className="app-shell mx-auto w-full max-w-lg">
+        <div key={tab} className={cn("tab-swap", tabMotion)}>
         <header className="mb-5 shrink-0">
           {tab === "tarefas" ? (
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight">{parts.title}</h1>
-              <p className="mt-1 text-sm text-muted">
-                {parts.weekday}
-                {ready ? ` · ${openLabel}` : ""}
-                {streak > 0 ? ` · ${streak} ${streak === 1 ? "dia seguido" : "dias seguidos"}` : ""}
+              <h1 className="text-2xl font-semibold tracking-tight" aria-label={greeting} suppressHydrationWarning>
+                <GreetingSnap key={greeting} text={greeting} />
+              </h1>
+              <p className="mt-1 text-sm text-muted" suppressHydrationWarning>
+                {parts ? `${parts.weekday}, ${parts.title}` : "\u00a0"}
               </p>
             </div>
           ) : (
@@ -656,6 +766,7 @@ function TaskBoard() {
         {tab === "tarefas" ? (
           <form
             className="mb-6 flex shrink-0 flex-col gap-3"
+            noValidate
             onSubmit={(event) => {
               event.preventDefault();
               void add();
@@ -663,20 +774,27 @@ function TaskBoard() {
           >
             <div className="flex gap-3">
               <Input
+                className="min-w-0"
                 value={draft}
                 maxLength={80}
                 enterKeyHint="done"
-                onChange={(event) => setDraft(event.target.value)}
+                aria-invalid={draftError ? true : undefined}
+                aria-describedby={draftError ? "nova-tarefa-error" : undefined}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  if (draftError) setDraftError("");
+                }}
                 onFocus={focusComposer}
                 id="nova-tarefa"
                 placeholder="O que precisa ser feito?"
                 aria-label="Nova tarefa"
                 autoComplete="off"
               />
-              <Button type="submit" aria-label="Adicionar tarefa" className="shrink-0" disabled={adding}>
+              <Button type="submit" aria-label="Adicionar tarefa" className="size-12 shrink-0 p-0">
                 <Plus className="size-5" strokeWidth={2} aria-hidden="true" />
               </Button>
             </div>
+            <FieldError id="nova-tarefa-error">{draftError}</FieldError>
           </form>
         ) : null}
 
@@ -685,6 +803,7 @@ function TaskBoard() {
             <Input
               value={query}
               maxLength={80}
+              enterKeyHint="search"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar"
               aria-label="Buscar tarefa"
@@ -692,32 +811,22 @@ function TaskBoard() {
           </div>
         ) : null}
 
-        {tab === "feitas" ? (
-          <div className="mb-4 grid shrink-0 grid-cols-3 gap-2">
-            {(
-              [
-                ["Feitas", String(stats.done)],
-                ["Sequência", String(streak)],
-                ["Taxa", stats.total ? `${Math.round((stats.done / stats.total) * 100)}%` : "0%"],
-              ] as const
-            ).map(([label, value]) => (
-              <div key={label} className="rounded-2xl bg-surface px-3 py-3 shadow-card">
-                <p className="text-lg font-semibold">{value}</p>
-                <p className="text-xs text-subtle">{label}</p>
-              </div>
-            ))}
-          </div>
+        {tab === "feitas" && stats.done > 0 ? (
+          <p className="mb-4 text-sm text-muted">{stats.done === 1 ? "1 feita" : `${stats.done} feitas`}</p>
         ) : null}
 
         <PhoneScroll>
           {tab === "hoje" ? (
-            <Agenda groups={agenda} today={clock} />
+            clock ? <Agenda groups={agenda} today={clock} /> : null
           ) : tab === "mais" ? (
             <MoreHub />
           ) : (
-            <ul key={tab} className="tab-pane flex flex-col gap-3 pb-28">
+            <ul className={cn("tab-pane task-list flex flex-col gap-3 pb-4", dragId && "is-sorting")}>
               {ready && visible.length === 0 ? (
-                <li className="rounded-xl border border-border bg-surface px-5 py-10 text-center">
+                <li className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-surface px-5 py-10 text-center">
+                  <span className="task-mark is-estudo is-done">
+                    {tab === "feitas" ? <CircleCheck className="size-4" strokeWidth={2.2} aria-hidden="true" /> : <ListChecks className="size-4" strokeWidth={2.2} aria-hidden="true" />}
+                  </span>
                   <p className="text-sm text-muted">{tab === "feitas" ? "Nada feito ainda" : "Nada para fazer"}</p>
                 </li>
               ) : (
@@ -725,6 +834,7 @@ function TaskBoard() {
                   <TaskCard
                     key={task.id}
                     task={task}
+                    today={clock ? isoDay(clock) : ""}
                     openList={tab === "tarefas"}
                     reorder={!query.trim()}
                     dragging={dragId === task.id}
@@ -736,6 +846,7 @@ function TaskBoard() {
             </ul>
           )}
         </PhoneScroll>
+        </div>
       </div>
 
       <DockNav tab={tab} onChange={setTab} />
