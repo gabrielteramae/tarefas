@@ -1,73 +1,61 @@
-# Lista de tarefas — React + TanStack Start
+# Tarefas
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)
 ![TanStack Start](https://img.shields.io/badge/TanStack%20Start-1-black?style=flat&logo=react&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38BDF8?style=flat&logo=tailwindcss&logoColor=white)
-![Status](https://img.shields.io/badge/status-testado%20no%20browser-brightgreen?style=flat)
 
-Lista de tarefas para celular. Você escreve a tarefa, escolhe o dia na agenda e marca o que já fez.
+Lista pessoal do que fazer hoje. O endereço público é [www.tarefas.com.br](https://www.tarefas.com.br).
 
-## 🧠 Por que este exemplo
+Você escreve a tarefa, marca o período no calendário e risca o que já fez. Cada conta vê só a própria lista.
 
-Uma lista comum vira portfólio quando a interface responde na hora e tem personalidade. Em pouco código, o app cobre três coisas que aparecem em produto de verdade:
+## O que dá para fazer
 
-- **Ação otimista** — criar, concluir e apagar atualizam a tela antes do servidor confirmar
-- **Estado por pessoa** — cada conta vê só as próprias tarefas
-- **Agenda** — cada tarefa pode ter um dia, e a lista agrupa por data
+| Tela | O que faz |
+| --- | --- |
+| Entrar | Conta com e-mail e senha, ou Google |
+| Lista | Escrever, buscar, concluir, reordenar e apagar, com desfazer |
+| Calendário | Ver o mês e o que está marcado em cada dia |
+| Feitas | O que já foi concluído |
+| Mais | Perfil, dados, backup, configurações, notificações, privacidade, ajuda, termos e sair |
 
-## 🏗️ Arquitetura
+A abertura mostra a marca e o nome. Na lista, a saudação muda com o horário: bom dia, boa tarde ou boa noite. O tema acompanha claro, escuro ou o sistema.
+
+Apagar some na hora e deixa um aviso só no topo. A seta desfaz todas as tarefas apagadas juntas. Criar, concluir e apagar atualizam a tela antes do servidor confirmar.
+
+## Arquitetura
 
 ```mermaid
 graph LR
   Phone[Celular] --> UI[React 19]
   UI --> Routes[TanStack Start]
-  Routes --> Tasks[Tarefas e agenda]
+  Routes --> Tasks[Lista e calendário]
   Routes --> Auth[Better Auth]
   Tasks --> DB[(PGLite ou Postgres)]
   Auth --> DB
 ```
 
-O front e as funções de servidor vivem no mesmo app. Sem `DATABASE_URL`, o banco é um PGLite local — o demo sobe com um comando. Com `DATABASE_URL`, as mesmas queries vão para o Postgres.
+A interface e as funções de servidor ficam no mesmo app. Sem `DATABASE_URL`, o banco é um PGLite local. Com `DATABASE_URL`, as mesmas consultas vão para o Postgres.
 
-## 📱 O que dá para fazer
+## Stack
 
-| Tela | O que faz |
-| --- | --- |
-| Entrar | Conta com e-mail e senha, ou Google |
-| Tarefas | Escrever, concluir, apagar e reordenar |
-| Agenda | Ver o que foi criado e escolher o dia de cada uma |
-| Feitas | Lista do que já foi riscado |
-| Conta | Perfil, dados salvos, contas, configurações, privacidade, notificações, ajuda, termos e sair |
+- **TypeScript, React 19, Vite e Tailwind CSS 4** — interface escura, verde e pensada para o polegar
+- **TanStack Start e TanStack Router** — páginas e navegação
+- **Better Auth** — e-mail, senha e Google. A senha do Google não fica no app
+- **Zod** — validação do texto que entra na lista
+- **Kysely** — consultas
+- **PGLite ou Postgres** — tarefas, conta e preferências
+- **Lucide** — ícones
+- **Sonner** — o aviso de desfazer
 
-Dá para arrastar as tarefas para mudar a ordem.
+O app também é uma PWA: ícone na tela inicial, manifesto e cores da barra do sistema.
 
-## ✅ Testado no browser
+## Como rodar
 
-Fluxo conferido com o app rodando (`npm run dev`), inclusive no tamanho de celular (390×844):
-
-- Criar conta e entrar
-- Adicionar tarefa e ver o emoji ao lado do texto
-- Abrir a Agenda e marcar o dia
-- Trocar de aba na barra de baixo (Tarefas, Agenda, Feitas)
-- Tarefas do mesmo jeito em claro e escuro
-
-## 🚀 Como rodar
-
-### Pré-requisitos
-
-- Node.js 20+
-- npm
-
-### 1. Instalar
+É preciso Node.js 22 ou mais recente e npm.
 
 ```bash
 npm install
-```
-
-### 2. Subir o app
-
-```bash
 npm run dev
 ```
 
@@ -75,14 +63,11 @@ Abra [http://localhost:8080](http://localhost:8080).
 
 Crie uma conta com e-mail e senha (mínimo de 8 caracteres). As tarefas ficam no PGLite desta máquina. Para usar Postgres, defina `DATABASE_URL` antes de subir.
 
-### 3. Checar tipos e build
-
 ```bash
 npm run typecheck
+npm test
 npm run build
 ```
-
-Variáveis opcionais:
 
 | Variável | Padrão | Uso |
 | --- | --- | --- |
@@ -91,17 +76,9 @@ Variáveis opcionais:
 | `BETTER_AUTH_URL` | origem do app | URL pública usada no login |
 | `VITE_AUTH_ENABLED` | `true` | Desligue só se a lista for local e sem conta |
 
-## 📦 Stack
+## Repositório
 
-- **React 19 + TypeScript + Vite + Tailwind CSS 4** — interface escura, verde e pensada para o polegar
-- **TanStack Start** — rotas e funções de servidor
-- **Better Auth** — e-mail/senha e Google (OAuth). A senha do Google não fica no app
-- **Zod** — validação do que entra na lista
-- **PGLite ou Postgres** — tarefas, dias e sequência. A engrenagem abre o que está gravado no banco
-
-## 🗺️ Relação com o desafio
-
-Este projeto é um gestor de tarefas simples, no tamanho de um app de celular: escrever, marcar o dia e riscar.
+O código fica em [github.com/gabrielteramae/tarefas](https://github.com/gabrielteramae/tarefas). O nome do repositório é `tarefas`.
 
 ---
 
