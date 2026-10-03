@@ -1,5 +1,5 @@
 export const APP_NAME = "Tarefas";
-export const SITE_URL = "https://www.tarefas.com.br";
+export const SITE_URL = "https://tarefas.grok.me";
 export const APP_TITLE = "Tarefas — lista do que fazer hoje";
 export const APP_DESCRIPTION =
   "Organize o que precisa ser feito hoje. Lista pessoal, com dia marcado, agenda e o que já foi concluído.";

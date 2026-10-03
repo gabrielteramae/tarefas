@@ -5,7 +5,7 @@
 ![TanStack Start](https://img.shields.io/badge/TanStack%20Start-1-black?style=flat&logo=react&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38BDF8?style=flat&logo=tailwindcss&logoColor=white)
 
-Lista pessoal do que fazer hoje. O endereço público é [www.tarefas.com.br](https://www.tarefas.com.br).
+Lista pessoal do que fazer hoje. O endereço público é [tarefas.grok.me](https://tarefas.grok.me).
 
 Você escreve a tarefa, marca o período no calendário e risca o que já fez. Cada conta vê só a própria lista.
 
