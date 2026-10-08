@@ -34,7 +34,9 @@ export function confirmPasswordProblem(password: string, confirm: string) {
 }
 
 export function nameProblem(raw: string) {
-  if (!plainText(raw, 40)) return "Informe o nome.";
+  const name = plainText(raw, 80);
+  if (!name) return "Informe o nome.";
+  if (name.length > 40) return "O nome pode ter no máximo 40 caracteres.";
   return "";
 }
 
